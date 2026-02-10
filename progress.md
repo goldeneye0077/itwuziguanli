@@ -135,6 +135,16 @@
   - `frontend/src/pages/inbound-page.tsx`
   - `frontend/src/pages/inbound-manual-import-card.tsx`
 
+### Task: Git 初始提交并推送到 GitHub
+- **Status:** complete
+- **Started:** 2026-02-10
+- **Completed:** 2026-02-10
+- Actions taken:
+  - 新增 `.gitignore`（忽略 `deploy/.env`、缓存目录、`*.db` 等本地文件）。
+  - 添加远端仓库：`git remote add origin https://github.com/goldeneye0077/itwuziguanli.git`
+  - 初始提交：`git commit -m "初始化项目：物料/库存/入库重构"`
+  - 推送：`git push -u origin main`
+
 ## Session: 2026-02-09
 <!-- 
   WHAT: The date of this work session.
