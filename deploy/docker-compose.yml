@@ -1,0 +1,169 @@
+x-backend-build: &backend_build
+  context: ../backend
+  dockerfile: Dockerfile
+
+x-backend-env: &backend_env
+  DATABASE_URL: ${DATABASE_URL:-mysql+pymysql://it_assets_user:change_me_mysql_password@mysql:3306/it_assets}
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+  MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+  MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+  MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change_me_minio_root_password}
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-change_me_minio_access_key}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-change_me_minio_secret_key}
+  MINIO_SECURE: ${MINIO_SECURE:-false}
+  JWT_SECRET: ${JWT_SECRET:-change_me_jwt_secret}
+  APP_ENV: ${APP_ENV:-development}
+  ENVIRONMENT: ${ENVIRONMENT:-development}
+  TZ: ${TZ:-Asia/Shanghai}
+  UPLOAD_DIR: ${UPLOAD_DIR:-uploads}
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change_me_mysql_root_password}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-it_assets}
+      MYSQL_USER: ${MYSQL_USER:-it_assets_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change_me_mysql_password}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "127.0.0.1:${MYSQL_PORT:-13306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  redis:
+    image: redis:7.0-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-16379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change_me_minio_root_password}
+    command: server /data --console-address ":9001"
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-19000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-19001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /data/.minio.sys/format.json"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  backend:
+    image: itwzgl1-backend
+    build: *backend_build
+    restart: unless-stopped
+    environment: *backend_env
+    command:
+      [
+        "sh",
+        "-c",
+        "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000",
+      ]
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-18000}:8000"
+    volumes:
+      - backend_uploads:/app/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2).read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  frontend:
+    image: itwzgl1-frontend
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-13000}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  nginx:
+    image: nginx:1.24-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${NGINX_PORT:-18080}:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  celery_worker:
+    image: itwzgl1-backend
+    restart: unless-stopped
+    environment: *backend_env
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    command: ["sh", "-c", "celery -b \"$$REDIS_URL\" worker --loglevel=info"]
+
+  celery_beat:
+    image: itwzgl1-backend
+    restart: unless-stopped
+    environment: *backend_env
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    command: ["sh", "-c", "celery -b \"$$REDIS_URL\" beat --loglevel=info"]
+
+volumes:
+  mysql_data:
+  redis_data:
+  minio_data:
+  backend_uploads:

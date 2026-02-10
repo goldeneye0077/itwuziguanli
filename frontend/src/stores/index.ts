@@ -1,0 +1,298 @@
+import {
+  createElement,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+
+import {
+  AuthApiError,
+  loginWithPassword,
+  logoutWithToken,
+  type LoginResult,
+  type SessionUser,
+} from "../api";
+import type { AppRole } from "../routes/blueprint-routes";
+
+const SESSION_STORAGE_KEY = "pgc-auth-session-v1";
+
+interface StoredSession {
+  readonly accessToken: string;
+  readonly expiresIn: number;
+  readonly user: SessionUser;
+}
+
+export interface LoginInput {
+  readonly employeeNo: string;
+  readonly password: string;
+}
+
+interface AuthSessionState {
+  readonly initialized: boolean;
+  readonly isAuthenticating: boolean;
+  readonly accessToken: string | null;
+  readonly expiresIn: number | null;
+  readonly user: SessionUser | null;
+  readonly errorMessage: string | null;
+}
+
+interface AuthSessionContextValue {
+  readonly state: AuthSessionState;
+  readonly isAuthenticated: boolean;
+  readonly userRoles: readonly AppRole[];
+  readonly login: (input: LoginInput) => Promise<void>;
+  readonly logout: () => Promise<void>;
+  readonly clearError: () => void;
+}
+
+const AUTH_STATE_ANONYMOUS: AuthSessionState = {
+  initialized: false,
+  isAuthenticating: false,
+  accessToken: null,
+  expiresIn: null,
+  user: null,
+  errorMessage: null,
+};
+
+const AuthSessionContext = createContext<AuthSessionContextValue | undefined>(
+  undefined,
+);
+
+function isRole(value: unknown): value is AppRole {
+  return (
+    value === "PUBLIC" ||
+    value === "USER" ||
+    value === "LEADER" ||
+    value === "ADMIN" ||
+    value === "SUPER_ADMIN"
+  );
+}
+
+function isStringArray(values: unknown): values is string[] {
+  return Array.isArray(values) && values.every((item) => typeof item === "string");
+}
+
+function normalizeStoredSession(candidate: unknown): StoredSession | null {
+  if (!candidate || typeof candidate !== "object") {
+    return null;
+  }
+
+  const source = candidate as {
+    accessToken?: unknown;
+    expiresIn?: unknown;
+    user?: {
+      id?: unknown;
+      employeeNo?: unknown;
+      name?: unknown;
+      roles?: unknown;
+      permissions?: unknown;
+    };
+  };
+
+  if (typeof source.accessToken !== "string") {
+    return null;
+  }
+
+  if (typeof source.expiresIn !== "number") {
+    return null;
+  }
+
+  if (!source.user || typeof source.user !== "object") {
+    return null;
+  }
+
+  const roles = Array.isArray(source.user.roles)
+    ? source.user.roles.filter(isRole)
+    : [];
+  const permissions = isStringArray(source.user.permissions)
+    ? source.user.permissions
+    : [];
+
+  if (
+    typeof source.user.id !== "number" ||
+    typeof source.user.employeeNo !== "string" ||
+    typeof source.user.name !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    accessToken: source.accessToken,
+    expiresIn: source.expiresIn,
+    user: {
+      id: source.user.id,
+      employeeNo: source.user.employeeNo,
+      name: source.user.name,
+      roles,
+      permissions,
+    },
+  };
+}
+
+function readSessionFromStorage(): StoredSession | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const stored = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
+  if (!stored) {
+    return null;
+  }
+
+  try {
+    return normalizeStoredSession(JSON.parse(stored));
+  } catch {
+    return null;
+  }
+}
+
+function persistSessionToStorage(session: StoredSession): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+}
+
+function clearSessionFromStorage(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+}
+
+function loginResultToState(result: LoginResult): AuthSessionState {
+  return {
+    initialized: true,
+    isAuthenticating: false,
+    accessToken: result.accessToken,
+    expiresIn: result.expiresIn,
+    user: result.user,
+    errorMessage: null,
+  };
+}
+
+export function AuthSessionProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const [state, setState] = useState<AuthSessionState>(AUTH_STATE_ANONYMOUS);
+
+  useEffect(() => {
+    const storedSession = readSessionFromStorage();
+    if (!storedSession) {
+      clearSessionFromStorage();
+      setState({
+        ...AUTH_STATE_ANONYMOUS,
+        initialized: true,
+      });
+      return;
+    }
+
+    setState({
+      initialized: true,
+      isAuthenticating: false,
+      accessToken: storedSession.accessToken,
+      expiresIn: storedSession.expiresIn,
+      user: storedSession.user,
+      errorMessage: null,
+    });
+  }, []);
+
+  const login = useCallback(async (input: LoginInput) => {
+    setState((previous) => ({
+      ...previous,
+      initialized: true,
+      isAuthenticating: true,
+      errorMessage: null,
+    }));
+
+    try {
+      const result = await loginWithPassword(input.employeeNo, input.password);
+      const nextState = loginResultToState(result);
+      persistSessionToStorage({
+        accessToken: result.accessToken,
+        expiresIn: result.expiresIn,
+        user: result.user,
+      });
+      setState(nextState);
+    } catch (error) {
+      const message =
+        error instanceof AuthApiError
+          ? error.message
+          : "账号或密码不正确，无法登录。";
+
+      clearSessionFromStorage();
+      setState({
+        initialized: true,
+        isAuthenticating: false,
+        accessToken: null,
+        expiresIn: null,
+        user: null,
+        errorMessage: message,
+      });
+      throw error;
+    }
+  }, []);
+
+  const logout = useCallback(async () => {
+    const token = state.accessToken;
+    clearSessionFromStorage();
+
+    setState({
+      initialized: true,
+      isAuthenticating: false,
+      accessToken: null,
+      expiresIn: null,
+      user: null,
+      errorMessage: null,
+    });
+
+    if (token) {
+      try {
+        await logoutWithToken(token);
+      } catch {
+        // best-effort backend logout; local state remains cleared
+      }
+    }
+  }, [state.accessToken]);
+
+  const clearError = useCallback(() => {
+    setState((previous) => ({
+      ...previous,
+      errorMessage: null,
+    }));
+  }, []);
+
+  const userRoles = state.user?.roles ?? [];
+  const isAuthenticated = state.initialized && Boolean(state.accessToken && state.user);
+
+  const value = useMemo<AuthSessionContextValue>(
+    () => ({
+      state,
+      isAuthenticated,
+      userRoles,
+      login,
+      logout,
+      clearError,
+    }),
+    [clearError, isAuthenticated, login, logout, state, userRoles],
+  );
+
+  return createElement(AuthSessionContext.Provider, { value }, children);
+}
+
+export function useAuthSession(): AuthSessionContextValue {
+  const context = useContext(AuthSessionContext);
+  if (!context) {
+    throw new Error("useAuthSession 必须在 AuthSessionProvider 内使用");
+  }
+
+  return context;
+}

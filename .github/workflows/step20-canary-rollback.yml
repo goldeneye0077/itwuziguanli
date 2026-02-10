@@ -1,0 +1,104 @@
+name: Step 20 Canary Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Action to run
+        required: true
+        default: deploy
+        type: choice
+        options:
+          - deploy
+          - rollback
+      canary_project:
+        description: Compose project name for canary stack
+        required: true
+        default: step20-canary
+        type: string
+      compose_file:
+        description: Compose file path
+        required: true
+        default: deploy/docker-compose.yml
+        type: string
+      canary_services:
+        description: Deploy only - space-separated services, empty means all
+        required: false
+        default: backend frontend nginx
+        type: string
+      canary_build:
+        description: Deploy only - include image build step
+        required: true
+        default: '1'
+        type: choice
+        options:
+          - '1'
+          - '0'
+      canary_wait_health:
+        description: Deploy only - wait for healthz endpoint
+        required: true
+        default: '1'
+        type: choice
+        options:
+          - '1'
+          - '0'
+      canary_remove_volumes:
+        description: Rollback only - remove canary volumes
+        required: true
+        default: '0'
+        type: choice
+        options:
+          - '0'
+          - '1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: step20-canary-${{ github.ref }}-${{ inputs.canary_project }}
+  cancel-in-progress: false
+
+jobs:
+  canary-release:
+    name: Execute canary release action
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure deploy scripts are executable
+        run: chmod +x deploy/scripts/canary-deploy.sh deploy/scripts/canary-rollback.sh
+
+      - name: Validate docker compose file
+        run: docker compose -f "${{ inputs.compose_file }}" config
+
+      - name: Manual canary deploy
+        if: inputs.action == 'deploy'
+        env:
+          COMPOSE_FILE: ${{ inputs.compose_file }}
+          CANARY_PROJECT: ${{ inputs.canary_project }}
+          CANARY_SERVICES: ${{ inputs.canary_services }}
+          CANARY_BUILD: ${{ inputs.canary_build }}
+          CANARY_WAIT_HEALTH: ${{ inputs.canary_wait_health }}
+        run: deploy/scripts/canary-deploy.sh
+
+      - name: Manual canary rollback
+        if: inputs.action == 'rollback'
+        env:
+          COMPOSE_FILE: ${{ inputs.compose_file }}
+          CANARY_PROJECT: ${{ inputs.canary_project }}
+          CANARY_REMOVE_VOLUMES: ${{ inputs.canary_remove_volumes }}
+        run: deploy/scripts/canary-rollback.sh
+
+      - name: Publish action summary
+        run: |
+          echo "action=${{ inputs.action }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "canary_project=${{ inputs.canary_project }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "compose_file=${{ inputs.compose_file }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "${{ inputs.action }}" = "deploy" ]; then
+            echo "canary_services=${{ inputs.canary_services }}" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "canary_build=${{ inputs.canary_build }}" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "canary_wait_health=${{ inputs.canary_wait_health }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "canary_remove_volumes=${{ inputs.canary_remove_volumes }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi

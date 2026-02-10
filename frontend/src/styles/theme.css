@@ -1,0 +1,56 @@
+:root {
+  --color-bg-canvas: var(--pgc-color-bg-canvas);
+  --color-bg-surface: var(--pgc-color-bg-surface);
+  --color-bg-subtle: var(--pgc-color-bg-subtle);
+  --color-text-primary: var(--pgc-color-text-primary);
+  --color-text-secondary: var(--pgc-color-text-secondary);
+  --color-text-muted: var(--pgc-color-text-muted);
+  --color-border-default: var(--pgc-color-border-default);
+  --color-border-strong: var(--pgc-color-border-strong);
+  --color-accent-primary: var(--pgc-color-accent-primary);
+  --color-accent-hover: var(--pgc-color-accent-hover);
+  --color-accent-active: var(--pgc-color-accent-active);
+  --color-accent-muted: var(--pgc-color-accent-muted);
+  --color-status-success: var(--pgc-color-status-success);
+  --color-status-warning: var(--pgc-color-status-warning);
+  --color-status-danger: var(--pgc-color-status-danger);
+  --color-focus-ring: var(--pgc-color-focus-ring);
+
+  --font-family-base: var(--pgc-font-family-base);
+  --font-family-mono: var(--pgc-font-family-mono);
+  --font-size-xs: var(--pgc-font-size-xs);
+  --font-size-sm: var(--pgc-font-size-sm);
+  --font-size-md: var(--pgc-font-size-md);
+  --font-size-lg: var(--pgc-font-size-lg);
+  --font-size-xl: var(--pgc-font-size-xl);
+  --line-height-tight: var(--pgc-line-height-tight);
+  --line-height-normal: var(--pgc-line-height-normal);
+  --line-height-relaxed: var(--pgc-line-height-relaxed);
+  --font-weight-regular: var(--pgc-font-weight-regular);
+  --font-weight-medium: var(--pgc-font-weight-medium);
+  --font-weight-semibold: var(--pgc-font-weight-semibold);
+  --font-weight-bold: var(--pgc-font-weight-bold);
+
+  --space-xxs: var(--pgc-space-xxs);
+  --space-xs: var(--pgc-space-xs);
+  --space-sm: var(--pgc-space-sm);
+  --space-md: var(--pgc-space-md);
+  --space-lg: var(--pgc-space-lg);
+  --space-xl: var(--pgc-space-xl);
+  --space-2xl: var(--pgc-space-2xl);
+  --space-3xl: var(--pgc-space-3xl);
+
+  --radius-sm: var(--pgc-radius-sm);
+  --radius-md: var(--pgc-radius-md);
+  --radius-lg: var(--pgc-radius-lg);
+  --radius-pill: var(--pgc-radius-pill);
+
+  --shadow-sm: var(--pgc-shadow-sm);
+  --shadow-md: var(--pgc-shadow-md);
+  --shadow-lg: var(--pgc-shadow-lg);
+
+  --motion-duration-fast: var(--pgc-motion-duration-fast);
+  --motion-duration-base: var(--pgc-motion-duration-base);
+  --motion-duration-slow: var(--pgc-motion-duration-slow);
+  --motion-easing-standard: var(--pgc-motion-easing-standard);
+}
