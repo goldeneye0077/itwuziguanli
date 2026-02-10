@@ -298,7 +298,7 @@ export function InboundManualImportCard(props: {
     }> = [];
 
     function indent(depth: number): string {
-      return depth > 0 ? `${"  ".repeat(depth)}` : "";
+      return depth > 0 ? `${"-- ".repeat(depth)}` : "";
     }
 
     categoryOptions.forEach((category) => {
@@ -316,7 +316,7 @@ export function InboundManualImportCard(props: {
         options.push({
           key: `sku-${sku.id}`,
           value: String(sku.id),
-          label: `${prefix}${indent(1)}#${sku.id} · ${sku.brand} ${sku.model} · ${sku.spec}`,
+          label: `${indent(category.depth + 1)}#${sku.id} · ${sku.brand} ${sku.model} · ${sku.spec}`,
         });
       });
     });
