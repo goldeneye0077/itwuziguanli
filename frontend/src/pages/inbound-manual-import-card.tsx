@@ -75,7 +75,6 @@ export function InboundManualImportCard(props: {
 
   const [selectedSkuId, setSelectedSkuId] = useState<string>("");
   const [inboundQuantity, setInboundQuantity] = useState<string>("1");
-  const [isQuantityTouched, setIsQuantityTouched] = useState(false);
 
   const [scanSn, setScanSn] = useState<string>("");
   const [bulkSn, setBulkSn] = useState<string>("");
@@ -95,6 +94,8 @@ export function InboundManualImportCard(props: {
     }
     return adminSkus.find((item) => item.id === parsedId) ?? null;
   }, [adminSkus, selectedSkuId]);
+
+  const isSerializedStockMode = selectedSku?.stockMode === "SERIALIZED";
 
   useEffect(() => {
     let cancelled = false;
@@ -131,19 +132,13 @@ export function InboundManualImportCard(props: {
   }, [accessToken, onError]);
 
   useEffect(() => {
-    const snCount = snItems.length;
-    if (!snCount) {
-      return;
-    }
-
-    setInboundQuantity((current) => {
-      const parsed = Number(current);
-      if (isQuantityTouched && Number.isFinite(parsed) && parsed >= snCount) {
-        return current;
-      }
-      return String(snCount);
-    });
-  }, [isQuantityTouched, snItems.length]);
+    setCreatedAssets([]);
+    setSnItems([]);
+    setSnNote(null);
+    setScanSn("");
+    setBulkSn("");
+    setInboundQuantity("1");
+  }, [selectedSkuId]);
 
   function addSerialNumbers(items: string[], sourceLabel: string): void {
     const normalized = items.map((item) => item.trim()).filter((item) => item.length > 0);
@@ -205,22 +200,11 @@ export function InboundManualImportCard(props: {
         return;
       }
 
-      const normalizedQty = Number(inboundQuantity);
-      if (!Number.isFinite(normalizedQty) || normalizedQty <= 0) {
-        onError("入库数量必须为正整数。");
-        return;
-      }
-      const qty = Math.trunc(normalizedQty);
-
       const skuLabel = `#${selectedSku.id} ${selectedSku.brand} ${selectedSku.model}`;
 
       if (selectedSku.stockMode === "SERIALIZED") {
         if (snItems.length === 0) {
           onError("序列号物料入库必须录入至少一个 SN。");
-          return;
-        }
-        if (qty !== snItems.length) {
-          onError(`序列号物料入库数量必须等于已录入 SN 数量（当前 SN：${snItems.length}）。`);
           return;
         }
 
@@ -236,14 +220,20 @@ export function InboundManualImportCard(props: {
         return;
       }
 
-      await inboundSkuStock(accessToken, parsedSkuId, { quantity: qty });
+      const normalizedQty = Number(inboundQuantity);
+      if (!Number.isFinite(normalizedQty) || normalizedQty <= 0) {
+        onError("入库数量必须为正整数。");
+        return;
+      }
+      const qty = Math.trunc(normalizedQty);
+
+      await inboundSkuStock(accessToken, parsedSkuId, { quantity: qty, occurredAt: inboundAtIso });
       onSuccess(`已为物料 ${skuLabel} 入库 ${qty} 件数量库存。`);
       setSnItems([]);
       setSnNote(null);
       setScanSn("");
       setBulkSn("");
       setInboundQuantity("1");
-      setIsQuantityTouched(false);
     } catch (error) {
       onError(toErrorMessage(error, "物料入库失败。"));
     } finally {
@@ -345,6 +335,8 @@ export function InboundManualImportCard(props: {
     return options;
   }, [adminSkus, categoryOptions]);
 
+  const inboundQuantityValue = isSerializedStockMode ? String(snItems.length) : inboundQuantity;
+
   return (
     <article className="app-shell__card inbound-wide" aria-label="物料入库">
       <div className="page-card-head">
@@ -368,10 +360,7 @@ export function InboundManualImportCard(props: {
           物料入库
           <select
             value={selectedSkuId}
-            onChange={(event) => {
-              setSelectedSkuId(event.target.value);
-              setCreatedAssets([]);
-            }}
+            onChange={(event) => setSelectedSkuId(event.target.value)}
           >
             <option value="">（请选择物料）</option>
             {skuSelectOptions.map((item) => (
@@ -382,15 +371,26 @@ export function InboundManualImportCard(props: {
           </select>
         </label>
 
+        {selectedSku ? (
+          <p className="store-precheck-result inbound-field-wide" role="note">
+            当前库存模式：
+            {selectedSku.stockMode === "SERIALIZED"
+              ? "SERIALIZED（序列号资产，必须录入 SN；入库数量自动等于 SN 条数）"
+              : "QUANTITY（数量库存，无需 SN；仅填写入库数量即可入库）"}
+          </p>
+        ) : null}
+
         <label className="store-field">
-          入库数量
+          {isSerializedStockMode ? "入库数量（自动）" : "入库数量"}
           <input
-            value={inboundQuantity}
+            value={inboundQuantityValue}
             inputMode="numeric"
             onChange={(event) => {
-              setIsQuantityTouched(true);
-              setInboundQuantity(event.target.value);
+              if (!isSerializedStockMode) {
+                setInboundQuantity(event.target.value);
+              }
             }}
+            disabled={isSerializedStockMode || !selectedSku}
           />
         </label>
 
@@ -403,24 +403,39 @@ export function InboundManualImportCard(props: {
           />
         </label>
 
-        <div className="inbound-sn">
-          <div className="inbound-sn__head">
-            <p className="inbound-sn__label">资产序列号（SN）</p>
-            <p className="inbound-sn__count">已录入 {snItems.length} 条</p>
-          </div>
+        {isSerializedStockMode ? (
+          <div className="inbound-sn">
+            <div className="inbound-sn__head">
+              <p className="inbound-sn__label">资产序列号（SN）</p>
+              <p className="inbound-sn__count">已录入 {snItems.length} 条</p>
+            </div>
 
-          <div className="inbound-sn__scan">
-            <label className="store-field inbound-field-wide">
-              扫码输入（回车添加）
-              <input
-                ref={scanInputRef}
-                value={scanSn}
-                onChange={(event) => setScanSn(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key !== "Enter") {
-                    return;
-                  }
-                  event.preventDefault();
+            <div className="inbound-sn__scan">
+              <label className="store-field inbound-field-wide">
+                扫码输入（回车添加）
+                <input
+                  ref={scanInputRef}
+                  value={scanSn}
+                  onChange={(event) => setScanSn(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter") {
+                      return;
+                    }
+                    event.preventDefault();
+                    const normalized = scanSn.trim();
+                    if (!normalized) {
+                      return;
+                    }
+                    setScanSn("");
+                    addSerialNumbers([normalized], "扫码输入");
+                  }}
+                  placeholder="将光标放在此处，使用扫码枪扫描 SN"
+                />
+              </label>
+              <button
+                className="app-shell__header-action"
+                type="button"
+                onClick={() => {
                   const normalized = scanSn.trim();
                   if (!normalized) {
                     return;
@@ -428,88 +443,77 @@ export function InboundManualImportCard(props: {
                   setScanSn("");
                   addSerialNumbers([normalized], "扫码输入");
                 }}
-                placeholder="将光标放在此处，使用扫码枪扫描 SN"
+              >
+                添加
+              </button>
+            </div>
+
+            <label className="store-field inbound-field-wide">
+              批量粘贴（逗号/空格/换行分隔）
+              <textarea
+                rows={3}
+                value={bulkSn}
+                onChange={(event) => setBulkSn(event.target.value)}
+                placeholder="SN001\nSN002\nSN003"
               />
             </label>
-            <button
-              className="app-shell__header-action"
-              type="button"
-              onClick={() => {
-                const normalized = scanSn.trim();
-                if (!normalized) {
-                  return;
-                }
-                setScanSn("");
-                addSerialNumbers([normalized], "扫码输入");
-              }}
-            >
-              添加
-            </button>
+
+            <div className="store-action-row page-actions">
+              <button
+                className="app-shell__header-action"
+                type="button"
+                disabled={!bulkSn.trim()}
+                onClick={() => {
+                  const items = parseSerialNumbers(bulkSn);
+                  setBulkSn("");
+                  addSerialNumbers(items, "批量粘贴");
+                }}
+              >
+                批量添加
+              </button>
+              <button
+                className="app-shell__header-action"
+                type="button"
+                disabled={snItems.length === 0}
+                onClick={() => {
+                  setSnItems([]);
+                  setCreatedAssets([]);
+                  setSnNote(null);
+                }}
+              >
+                清空 SN
+              </button>
+            </div>
+
+            {snNote ? (
+              <p className="store-precheck-result" role="note">
+                {snNote}
+              </p>
+            ) : null}
+
+            {snItems.length ? (
+              <ul className="inbound-sn__list" aria-label="已录入序列号列表">
+                {snItems.slice(0, 50).map((sn) => (
+                  <li key={sn} className="inbound-sn__item">
+                    <code className="inbound-sn__value">{sn}</code>
+                    <button
+                      className="app-shell__header-action"
+                      type="button"
+                      onClick={() => setSnItems((current) => current.filter((item) => item !== sn))}
+                    >
+                      移除
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {snItems.length > 50 ? (
+              <p className="app-shell__card-copy">
+                列表仅预览前 50 条，实际将按已录入数量全部入库。
+              </p>
+            ) : null}
           </div>
-
-          <label className="store-field inbound-field-wide">
-            批量粘贴（逗号/空格/换行分隔）
-            <textarea
-              rows={3}
-              value={bulkSn}
-              onChange={(event) => setBulkSn(event.target.value)}
-              placeholder="SN001\nSN002\nSN003"
-            />
-          </label>
-
-          <div className="store-action-row page-actions">
-            <button
-              className="app-shell__header-action"
-              type="button"
-              disabled={!bulkSn.trim()}
-              onClick={() => {
-                const items = parseSerialNumbers(bulkSn);
-                setBulkSn("");
-                addSerialNumbers(items, "批量粘贴");
-              }}
-            >
-              批量添加
-            </button>
-            <button
-              className="app-shell__header-action"
-              type="button"
-              disabled={snItems.length === 0}
-              onClick={() => {
-                setSnItems([]);
-                setCreatedAssets([]);
-                setSnNote(null);
-              }}
-            >
-              清空 SN
-            </button>
-          </div>
-
-          {snNote ? (
-            <p className="store-precheck-result" role="note">
-              {snNote}
-            </p>
-          ) : null}
-
-          {snItems.length ? (
-            <ul className="inbound-sn__list" aria-label="已录入序列号列表">
-              {snItems.slice(0, 50).map((sn) => (
-                <li key={sn} className="inbound-sn__item">
-                  <code className="inbound-sn__value">{sn}</code>
-                  <button
-                    className="app-shell__header-action"
-                    type="button"
-                    onClick={() => setSnItems((current) => current.filter((item) => item !== sn))}
-                  >
-                    移除
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {snItems.length > 50 ? (
-            <p className="app-shell__card-copy">列表仅预览前 50 条，实际将按已录入数量全部入库。</p>
-          ) : null}
-        </div>
+        ) : null}
 
         <div className="inbound-import-actions">
           <button
@@ -520,14 +524,16 @@ export function InboundManualImportCard(props: {
           >
             {isSubmitting ? "入库中..." : "提交入库"}
           </button>
-          <button
-            className="app-shell__header-action"
-            type="button"
-            disabled={!createdAssets.length}
-            onClick={() => downloadCsv()}
-          >
-            导出本次入库 CSV
-          </button>
+          {isSerializedStockMode ? (
+            <button
+              className="app-shell__header-action"
+              type="button"
+              disabled={!createdAssets.length}
+              onClick={() => downloadCsv()}
+            >
+              导出本次入库 CSV
+            </button>
+          ) : null}
         </div>
 
         {createdAssets.length ? (

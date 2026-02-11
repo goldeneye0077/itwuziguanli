@@ -56,6 +56,10 @@ Phase 4
 - [x] Docker DB 迁移：容器启动时自动执行 `alembic upgrade head`（避免旧 volume 导致 500）
 - [x] 鉴权兜底：当 access token 失效导致 401 时，前端自动清理本地会话并跳转登录
 - [x] 冒烟：/materials /inventory /inbound /store /outbound 核心路径可用
+- [x] `/inbound`：按 SKU 库存模式自动切换表单，避免数量库存也显示 SN 录入区导致误解
+  - SERIALIZED：必须录入 SN；“入库数量”只读且等于 SN 条数
+  - QUANTITY：隐藏 SN 录入区；仅填写“入库数量”即可入库（支持 `occurredAt` 传参落库存流水）
+- [ ] 冒烟：QUANTITY 物料可不录 SN 入库；SERIALIZED 仍要求 SN
 - Status: in_progress
 
 ### Phase 5: Delivery

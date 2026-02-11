@@ -5,6 +5,29 @@
   WHEN: Update after completing each phase or encountering errors. More detailed than task_plan.md.
 -->
 
+## Session: 2026-02-11
+
+### Task: `/inbound` 按库存模式自动切换表单（解决耗材无 SN 入库）
+- **Status:** complete
+- **Started:** 2026-02-11
+- **Completed:** 2026-02-11
+- Actions taken:
+  - 更新规划文档：`task_plan.md`、`findings.md`（补充“数量库存不需要 SN，表单随 stockMode 自动切换”）。
+  - 调整手工入库卡片（`frontend/src/pages/inbound-manual-import-card.tsx`）：
+    - `QUANTITY`：隐藏 SN 录入区；仅填写“入库数量”即可提交入库。
+    - `SERIALIZED`：显示 SN 录入区；“入库数量”改为只读并自动等于 SN 条数，避免“数量可随意改”造成困惑。
+    - 切换物料时自动清理 SN/数量/导入结果，避免跨物料误用。
+    - 数量入库调用补齐 `occurredAt`（使用页面的“入库时间”字段落库存流水）。
+  - 验证：
+    - `npm --prefix frontend run typecheck`
+    - `powershell -ExecutionPolicy Bypass -File deploy/scripts/refresh-dev.ps1`（`/healthz` 与 `/api/healthz` 通过）
+    - `Invoke-WebRequest http://127.0.0.1:18080/inbound` 返回 200
+- Files created/modified:
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+  - `frontend/src/pages/inbound-manual-import-card.tsx`
+
 ## Session: 2026-02-10
 
 ### Phase 1: Requirements & Discovery
