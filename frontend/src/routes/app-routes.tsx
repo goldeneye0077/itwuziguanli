@@ -93,7 +93,7 @@ const ROUTE_LABELS: Record<string, string> = {
   "/approvals/leader": "领导审批",
   "/approvals/admin": "管理员审批",
   "/outbound": "出库执行",
-  "/inbound": "入库",
+  "/inbound": "物料入库",
   "/inventory": "库存管理",
   "/materials": "物料管理",
   "/assets": "我的资产",

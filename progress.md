@@ -146,6 +146,20 @@
   - 初始提交：`git commit -m "初始化项目：物料/库存/入库重构"`
   - 推送：`git push -u origin main`
 
+### Task: 导航菜单“入库”改为“物料入库”
+- **Status:** complete
+- **Started:** 2026-02-10
+- **Completed:** 2026-02-10
+- Actions taken:
+  - 更新侧边栏菜单文案：`/inbound` 从“入库”改为“物料入库”。
+  - 验证：`npm --prefix frontend run typecheck`
+  - 刷新：`powershell -ExecutionPolicy Bypass -File deploy/scripts/refresh-dev.ps1`
+- Files created/modified:
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+  - `frontend/src/routes/app-routes.tsx`
+
 ## Session: 2026-02-09
 <!-- 
   WHAT: The date of this work session.
