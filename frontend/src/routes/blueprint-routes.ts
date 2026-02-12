@@ -178,7 +178,7 @@ export const BLUEPRINT_ROUTE_META = [
   },
   {
     route: "/admin/crud",
-    roles: ["ADMIN", "SUPER_ADMIN"],
+    roles: ["SUPER_ADMIN"],
     pageType: "admin-crud",
     primaryActionIds: ["crud.save-record"],
   },

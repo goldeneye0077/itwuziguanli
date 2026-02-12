@@ -323,6 +323,13 @@ def seed_demo_data(session: Session, *, seed_password: str) -> None:
         name="REPORTS_READ",
         description="\u67e5\u770b\u62a5\u8868\u4e0e\u5206\u6790\u3002",
     )
+    perm_outbound_read = ensure_permission(
+        permission_id=4005,
+        resource="OUTBOUND",
+        action="READ",
+        name="OUTBOUND_READ",
+        description="\u67e5\u770b\u51fa\u5e93\u6267\u884c\u4e0e\u51fa\u5e93\u8bb0\u5f55\u3002",
+    )
 
     # Role-permission mapping
     ensure_role_permission(
@@ -344,6 +351,16 @@ def seed_demo_data(session: Session, *, seed_password: str) -> None:
         mapping_id=5004,
         role_id=role_admin.id,
         permission_id=perm_reports_read.id,
+    )
+    ensure_role_permission(
+        mapping_id=5005,
+        role_id=role_admin.id,
+        permission_id=perm_outbound_read.id,
+    )
+    ensure_role_permission(
+        mapping_id=5006,
+        role_id=role_super.id,
+        permission_id=perm_outbound_read.id,
     )
 
     # User-role mapping

@@ -1,11 +1,16 @@
-"""M05 router implementation: outbound operations."""
+﻿"""M05 router implementation: outbound operations."""
 
 from __future__ import annotations
 
+import csv
+import io
+import json
 from datetime import UTC, datetime
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from fastapi.responses import StreamingResponse
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from ....core.auth import AuthContext, get_auth_context
@@ -17,7 +22,7 @@ from ....models.application import (
     ApplicationItem,
     Logistics,
 )
-from ....models.catalog import Sku
+from ....models.catalog import Category, Sku
 from ....models.enums import (
     ApplicationStatus,
     AssetStatus,
@@ -29,11 +34,13 @@ from ....models.enums import (
 from ....models.inventory import Asset, StockFlow
 from ....models.notification import UserAddress
 from ....models.organization import SysUser
+from ....models.sku_stock import SkuStockFlow
 from ....schemas.common import ApiResponse, build_success_response
 from ....schemas.m05 import OutboundConfirmPickupRequest, OutboundShipRequest
 from ....services.sku_stock_service import apply_stock_delta
 
 router = APIRouter(tags=["M05"])
+PERMISSION_OUTBOUND_READ = "OUTBOUND:READ"
 
 
 def _to_iso8601(value: datetime) -> str:
@@ -55,13 +62,45 @@ def _next_bigint_id(db: Session, model: type[object]) -> int:
     return int(value or 0) + 1
 
 
-def _require_admin(context: AuthContext) -> None:
-    if context.roles.intersection({"ADMIN", "SUPER_ADMIN"}):
+def _normalize_required_permissions(
+    required_permissions: set[str] | None,
+) -> set[str]:
+    return {
+        str(value).strip().upper()
+        for value in (required_permissions or set())
+        if str(value).strip()
+    }
+
+
+def _require_admin(
+    context: AuthContext,
+    *,
+    required_permissions: set[str] | None = None,
+) -> None:
+    if not context.roles.intersection({"ADMIN", "SUPER_ADMIN"}):
+        raise AppException(
+            code="ROLE_INSUFFICIENT",
+            message="当前角色无权执行该操作。",
+        )
+
+    if "SUPER_ADMIN" in context.roles:
         return
+
+    normalized = _normalize_required_permissions(required_permissions)
+    if not normalized or normalized.intersection(context.permissions):
+        return
+
     raise AppException(
-        code="ROLE_INSUFFICIENT",
-        message="当前角色无权执行该操作。",
+        code="PERMISSION_DENIED",
+        message="当前账号缺少执行该操作所需权限。",
+        details={"required_permissions": sorted(normalized)},
     )
+
+
+def _to_iso8601_or_none(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return _to_iso8601(value)
 
 
 def _assert_application_status(
@@ -559,3 +598,593 @@ def ship_express_outbound(
             "delivered_items": _serialize_items(items),
         }
     )
+
+
+OUTBOUND_RECORD_COLUMNS: tuple[str, ...] = (
+    "record_key",
+    "record_type",
+    "action",
+    "occurred_at",
+    "meta_json",
+    "application_id",
+    "application_title",
+    "application_type",
+    "application_status",
+    "delivery_type",
+    "pickup_code",
+    "pickup_qr_string",
+    "application_created_at",
+    "applicant_user_id",
+    "applicant_name_snapshot",
+    "applicant_department_snapshot",
+    "applicant_phone_snapshot",
+    "applicant_job_title_snapshot",
+    "carrier",
+    "tracking_no",
+    "shipped_at",
+    "logistics_receiver_name",
+    "logistics_receiver_phone",
+    "logistics_province",
+    "logistics_city",
+    "logistics_district",
+    "logistics_detail",
+    "sku_id",
+    "category_id",
+    "category_name",
+    "brand",
+    "model",
+    "spec",
+    "stock_mode",
+    "reference_price",
+    "cover_url",
+    "safety_stock_threshold",
+    "asset_id",
+    "asset_tag",
+    "sn",
+    "asset_status",
+    "holder_user_id",
+    "inbound_at",
+    "quantity",
+    "on_hand_delta",
+    "reserved_delta",
+    "on_hand_qty_after",
+    "reserved_qty_after",
+    "operator_user_id",
+    "operator_name",
+)
+
+
+def _string_or_none(value: object | None) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    return text
+
+
+def _json_dict(value: object | None) -> dict[str, object] | None:
+    if isinstance(value, dict):
+        return value
+    return None
+
+
+def _record_value(
+    *,
+    meta_json: dict[str, object] | None,
+    key: str,
+) -> str | None:
+    if meta_json is None:
+        return None
+    return _string_or_none(meta_json.get(key))
+
+
+def _delivery_type_value(value: DeliveryType | None) -> str | None:
+    if value is None:
+        return None
+    return value.value
+
+
+def _application_type_value(application: Application | None) -> str | None:
+    if application is None:
+        return None
+    return application.type.value
+
+
+def _application_status_value(application: Application | None) -> str | None:
+    if application is None:
+        return None
+    return application.status.value
+
+
+def _format_reference_price(sku: Sku | None) -> str | None:
+    if sku is None:
+        return None
+    return str(sku.reference_price)
+
+
+def _build_asset_outbound_records(
+    db: Session,
+    *,
+    action: Literal["OUTBOUND", "SHIP"] | None,
+    delivery_type: DeliveryType | None,
+    application_id: int | None,
+    operator_user_id: int | None,
+    sku_id: int | None,
+    asset_id: int | None,
+    from_at: datetime | None,
+    to_at: datetime | None,
+    q: str | None,
+) -> list[dict[str, Any]]:
+    operator_alias = SysUser
+    stmt = (
+        select(
+            StockFlow,
+            Asset,
+            Sku,
+            Category,
+            Application,
+            Logistics,
+            operator_alias,
+        )
+        .join(Asset, Asset.id == StockFlow.asset_id)
+        .join(Sku, Sku.id == Asset.sku_id)
+        .outerjoin(Category, Category.id == Sku.category_id)
+        .outerjoin(Application, Application.id == StockFlow.related_application_id)
+        .outerjoin(Logistics, Logistics.application_id == Application.id)
+        .join(operator_alias, operator_alias.id == StockFlow.operator_user_id)
+        .where(StockFlow.action.in_([StockFlowAction.OUTBOUND, StockFlowAction.SHIP]))
+    )
+    if action is not None:
+        stmt = stmt.where(StockFlow.action == StockFlowAction(action))
+    if delivery_type is not None:
+        stmt = stmt.where(Application.delivery_type == delivery_type)
+    if application_id is not None:
+        stmt = stmt.where(StockFlow.related_application_id == application_id)
+    if operator_user_id is not None:
+        stmt = stmt.where(StockFlow.operator_user_id == operator_user_id)
+    if sku_id is not None:
+        stmt = stmt.where(Asset.sku_id == sku_id)
+    if asset_id is not None:
+        stmt = stmt.where(StockFlow.asset_id == asset_id)
+    if from_at is not None:
+        stmt = stmt.where(StockFlow.occurred_at >= _to_naive_utc(from_at))
+    if to_at is not None:
+        stmt = stmt.where(StockFlow.occurred_at <= _to_naive_utc(to_at))
+    if q:
+        pattern = f"%{q}%"
+        stmt = stmt.where(
+            or_(
+                cast(StockFlow.related_application_id, String).like(pattern),
+                Application.title.ilike(pattern),
+                Asset.asset_tag.ilike(pattern),
+                Asset.sn.ilike(pattern),
+                Logistics.tracking_no.ilike(pattern),
+                operator_alias.name.ilike(pattern),
+            )
+        )
+
+    rows = db.execute(stmt).all()
+    records: list[dict[str, Any]] = []
+    for flow, asset, sku, category, application, logistics, operator in rows:
+        meta_json = _json_dict(flow.meta_json)
+        record = {
+            "_occurred_at_dt": flow.occurred_at,
+            "record_key": f"ASSET_FLOW-{int(flow.id)}",
+            "record_type": "ASSET",
+            "action": flow.action.value,
+            "occurred_at": _to_iso8601(flow.occurred_at),
+            "meta_json": meta_json,
+            "application_id": (
+                int(flow.related_application_id)
+                if flow.related_application_id is not None
+                else None
+            ),
+            "application_title": application.title if application is not None else None,
+            "application_type": _application_type_value(application),
+            "application_status": _application_status_value(application),
+            "delivery_type": _delivery_type_value(
+                application.delivery_type if application is not None else None
+            ),
+            "pickup_code": application.pickup_code if application is not None else None,
+            "pickup_qr_string": (
+                application.pickup_qr_string if application is not None else None
+            ),
+            "application_created_at": _to_iso8601_or_none(
+                application.created_at if application is not None else None
+            ),
+            "applicant_user_id": (
+                int(application.applicant_user_id) if application is not None else None
+            ),
+            "applicant_name_snapshot": (
+                application.applicant_name_snapshot if application is not None else None
+            ),
+            "applicant_department_snapshot": (
+                application.applicant_department_snapshot
+                if application is not None
+                else None
+            ),
+            "applicant_phone_snapshot": (
+                application.applicant_phone_snapshot if application is not None else None
+            ),
+            "applicant_job_title_snapshot": (
+                application.applicant_job_title_snapshot
+                if application is not None
+                else None
+            ),
+            "carrier": (
+                logistics.carrier
+                if logistics is not None
+                else _record_value(meta_json=meta_json, key="carrier")
+            ),
+            "tracking_no": (
+                logistics.tracking_no
+                if logistics is not None
+                else _record_value(meta_json=meta_json, key="tracking_no")
+            ),
+            "shipped_at": _to_iso8601_or_none(
+                logistics.shipped_at if logistics is not None else None
+            ),
+            "logistics_receiver_name": (
+                logistics.receiver_name if logistics is not None else None
+            ),
+            "logistics_receiver_phone": (
+                logistics.receiver_phone if logistics is not None else None
+            ),
+            "logistics_province": logistics.province if logistics is not None else None,
+            "logistics_city": logistics.city if logistics is not None else None,
+            "logistics_district": logistics.district if logistics is not None else None,
+            "logistics_detail": logistics.detail if logistics is not None else None,
+            "sku_id": int(sku.id),
+            "category_id": int(category.id) if category is not None else None,
+            "category_name": category.name if category is not None else None,
+            "brand": sku.brand,
+            "model": sku.model,
+            "spec": sku.spec,
+            "stock_mode": sku.stock_mode.value,
+            "reference_price": _format_reference_price(sku),
+            "cover_url": sku.cover_url,
+            "safety_stock_threshold": int(sku.safety_stock_threshold),
+            "asset_id": int(asset.id),
+            "asset_tag": asset.asset_tag,
+            "sn": asset.sn,
+            "asset_status": asset.status.value,
+            "holder_user_id": (
+                int(asset.holder_user_id) if asset.holder_user_id is not None else None
+            ),
+            "inbound_at": _to_iso8601(asset.inbound_at),
+            "quantity": None,
+            "on_hand_delta": None,
+            "reserved_delta": None,
+            "on_hand_qty_after": None,
+            "reserved_qty_after": None,
+            "operator_user_id": int(flow.operator_user_id),
+            "operator_name": operator.name,
+        }
+        records.append(record)
+
+    return records
+
+
+def _build_quantity_outbound_records(
+    db: Session,
+    *,
+    action: Literal["OUTBOUND", "SHIP"] | None,
+    delivery_type: DeliveryType | None,
+    application_id: int | None,
+    operator_user_id: int | None,
+    sku_id: int | None,
+    from_at: datetime | None,
+    to_at: datetime | None,
+    q: str | None,
+) -> list[dict[str, Any]]:
+    operator_alias = SysUser
+    stmt = (
+        select(
+            SkuStockFlow,
+            Sku,
+            Category,
+            Application,
+            Logistics,
+            operator_alias,
+        )
+        .join(Sku, Sku.id == SkuStockFlow.sku_id)
+        .outerjoin(Category, Category.id == Sku.category_id)
+        .outerjoin(Application, Application.id == SkuStockFlow.related_application_id)
+        .outerjoin(Logistics, Logistics.application_id == Application.id)
+        .join(operator_alias, operator_alias.id == SkuStockFlow.operator_user_id)
+        .where(
+            SkuStockFlow.action.in_(
+                [SkuStockFlowAction.OUTBOUND, SkuStockFlowAction.SHIP]
+            )
+        )
+    )
+    if action is not None:
+        stmt = stmt.where(SkuStockFlow.action == SkuStockFlowAction(action))
+    if delivery_type is not None:
+        stmt = stmt.where(Application.delivery_type == delivery_type)
+    if application_id is not None:
+        stmt = stmt.where(SkuStockFlow.related_application_id == application_id)
+    if operator_user_id is not None:
+        stmt = stmt.where(SkuStockFlow.operator_user_id == operator_user_id)
+    if sku_id is not None:
+        stmt = stmt.where(SkuStockFlow.sku_id == sku_id)
+    if from_at is not None:
+        stmt = stmt.where(SkuStockFlow.occurred_at >= _to_naive_utc(from_at))
+    if to_at is not None:
+        stmt = stmt.where(SkuStockFlow.occurred_at <= _to_naive_utc(to_at))
+    if q:
+        pattern = f"%{q}%"
+        stmt = stmt.where(
+            or_(
+                cast(SkuStockFlow.related_application_id, String).like(pattern),
+                Application.title.ilike(pattern),
+                Logistics.tracking_no.ilike(pattern),
+                operator_alias.name.ilike(pattern),
+            )
+        )
+
+    rows = db.execute(stmt).all()
+    records: list[dict[str, Any]] = []
+    for flow, sku, category, application, logistics, operator in rows:
+        meta_json = _json_dict(flow.meta_json)
+        quantity = abs(int(flow.on_hand_delta))
+        if quantity == 0:
+            quantity = abs(int(flow.reserved_delta))
+        record = {
+            "_occurred_at_dt": flow.occurred_at,
+            "record_key": f"SKU_FLOW-{int(flow.id)}",
+            "record_type": "SKU_QUANTITY",
+            "action": flow.action.value,
+            "occurred_at": _to_iso8601(flow.occurred_at),
+            "meta_json": meta_json,
+            "application_id": (
+                int(flow.related_application_id)
+                if flow.related_application_id is not None
+                else None
+            ),
+            "application_title": application.title if application is not None else None,
+            "application_type": _application_type_value(application),
+            "application_status": _application_status_value(application),
+            "delivery_type": _delivery_type_value(
+                application.delivery_type if application is not None else None
+            ),
+            "pickup_code": application.pickup_code if application is not None else None,
+            "pickup_qr_string": (
+                application.pickup_qr_string if application is not None else None
+            ),
+            "application_created_at": _to_iso8601_or_none(
+                application.created_at if application is not None else None
+            ),
+            "applicant_user_id": (
+                int(application.applicant_user_id) if application is not None else None
+            ),
+            "applicant_name_snapshot": (
+                application.applicant_name_snapshot if application is not None else None
+            ),
+            "applicant_department_snapshot": (
+                application.applicant_department_snapshot
+                if application is not None
+                else None
+            ),
+            "applicant_phone_snapshot": (
+                application.applicant_phone_snapshot if application is not None else None
+            ),
+            "applicant_job_title_snapshot": (
+                application.applicant_job_title_snapshot
+                if application is not None
+                else None
+            ),
+            "carrier": (
+                logistics.carrier
+                if logistics is not None
+                else _record_value(meta_json=meta_json, key="carrier")
+            ),
+            "tracking_no": (
+                logistics.tracking_no
+                if logistics is not None
+                else _record_value(meta_json=meta_json, key="tracking_no")
+            ),
+            "shipped_at": _to_iso8601_or_none(
+                logistics.shipped_at if logistics is not None else None
+            ),
+            "logistics_receiver_name": (
+                logistics.receiver_name if logistics is not None else None
+            ),
+            "logistics_receiver_phone": (
+                logistics.receiver_phone if logistics is not None else None
+            ),
+            "logistics_province": logistics.province if logistics is not None else None,
+            "logistics_city": logistics.city if logistics is not None else None,
+            "logistics_district": logistics.district if logistics is not None else None,
+            "logistics_detail": logistics.detail if logistics is not None else None,
+            "sku_id": int(sku.id),
+            "category_id": int(category.id) if category is not None else None,
+            "category_name": category.name if category is not None else None,
+            "brand": sku.brand,
+            "model": sku.model,
+            "spec": sku.spec,
+            "stock_mode": sku.stock_mode.value,
+            "reference_price": _format_reference_price(sku),
+            "cover_url": sku.cover_url,
+            "safety_stock_threshold": int(sku.safety_stock_threshold),
+            "asset_id": None,
+            "asset_tag": None,
+            "sn": None,
+            "asset_status": None,
+            "holder_user_id": None,
+            "inbound_at": None,
+            "quantity": quantity,
+            "on_hand_delta": int(flow.on_hand_delta),
+            "reserved_delta": int(flow.reserved_delta),
+            "on_hand_qty_after": int(flow.on_hand_qty_after),
+            "reserved_qty_after": int(flow.reserved_qty_after),
+            "operator_user_id": int(flow.operator_user_id),
+            "operator_name": operator.name,
+        }
+        records.append(record)
+
+    return records
+
+
+def _build_outbound_records(
+    db: Session,
+    *,
+    action: Literal["OUTBOUND", "SHIP"] | None,
+    record_type: Literal["ASSET", "SKU_QUANTITY"] | None,
+    delivery_type: DeliveryType | None,
+    application_id: int | None,
+    operator_user_id: int | None,
+    sku_id: int | None,
+    asset_id: int | None,
+    from_at: datetime | None,
+    to_at: datetime | None,
+    q: str | None,
+) -> list[dict[str, Any]]:
+    normalized_q = _string_or_none(q)
+    include_asset = record_type in (None, "ASSET")
+    include_quantity = record_type in (None, "SKU_QUANTITY")
+    records: list[dict[str, Any]] = []
+
+    if include_asset:
+        records.extend(
+            _build_asset_outbound_records(
+                db,
+                action=action,
+                delivery_type=delivery_type,
+                application_id=application_id,
+                operator_user_id=operator_user_id,
+                sku_id=sku_id,
+                asset_id=asset_id,
+                from_at=from_at,
+                to_at=to_at,
+                q=normalized_q,
+            )
+        )
+
+    if include_quantity and asset_id is None:
+        records.extend(
+            _build_quantity_outbound_records(
+                db,
+                action=action,
+                delivery_type=delivery_type,
+                application_id=application_id,
+                operator_user_id=operator_user_id,
+                sku_id=sku_id,
+                from_at=from_at,
+                to_at=to_at,
+                q=normalized_q,
+            )
+        )
+
+    records.sort(
+        key=lambda item: (
+            item["_occurred_at_dt"],
+            str(item["record_key"]),
+        ),
+        reverse=True,
+    )
+    for item in records:
+        item.pop("_occurred_at_dt", None)
+    return records
+
+
+def _csv_cell(value: object | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return str(value)
+
+
+@router.get("/outbound/records", response_model=ApiResponse)
+def list_outbound_records(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=200),
+    from_at: datetime | None = Query(default=None, alias="from"),
+    to_at: datetime | None = Query(default=None, alias="to"),
+    action: Literal["OUTBOUND", "SHIP"] | None = Query(default=None),
+    record_type: Literal["ASSET", "SKU_QUANTITY"] | None = Query(default=None),
+    delivery_type: DeliveryType | None = Query(default=None),
+    application_id: int | None = Query(default=None, ge=1),
+    operator_user_id: int | None = Query(default=None, ge=1),
+    sku_id: int | None = Query(default=None, ge=1),
+    asset_id: int | None = Query(default=None, ge=1),
+    q: str | None = Query(default=None),
+    context: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db_session),
+) -> ApiResponse:
+    _require_admin(context, required_permissions={PERMISSION_OUTBOUND_READ})
+    records = _build_outbound_records(
+        db,
+        action=action,
+        record_type=record_type,
+        delivery_type=delivery_type,
+        application_id=application_id,
+        operator_user_id=operator_user_id,
+        sku_id=sku_id,
+        asset_id=asset_id,
+        from_at=from_at,
+        to_at=to_at,
+        q=q,
+    )
+    total = len(records)
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_items = records[start:end]
+    return build_success_response(
+        {
+            "items": page_items,
+            "meta": {
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+            },
+        }
+    )
+
+
+@router.get("/outbound/records/export")
+def export_outbound_records_csv(
+    from_at: datetime | None = Query(default=None, alias="from"),
+    to_at: datetime | None = Query(default=None, alias="to"),
+    action: Literal["OUTBOUND", "SHIP"] | None = Query(default=None),
+    record_type: Literal["ASSET", "SKU_QUANTITY"] | None = Query(default=None),
+    delivery_type: DeliveryType | None = Query(default=None),
+    application_id: int | None = Query(default=None, ge=1),
+    operator_user_id: int | None = Query(default=None, ge=1),
+    sku_id: int | None = Query(default=None, ge=1),
+    asset_id: int | None = Query(default=None, ge=1),
+    q: str | None = Query(default=None),
+    context: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db_session),
+) -> StreamingResponse:
+    _require_admin(context, required_permissions={PERMISSION_OUTBOUND_READ})
+    rows = _build_outbound_records(
+        db,
+        action=action,
+        record_type=record_type,
+        delivery_type=delivery_type,
+        application_id=application_id,
+        operator_user_id=operator_user_id,
+        sku_id=sku_id,
+        asset_id=asset_id,
+        from_at=from_at,
+        to_at=to_at,
+        q=q,
+    )
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(list(OUTBOUND_RECORD_COLUMNS))
+    for row in rows:
+        writer.writerow([_csv_cell(row.get(column)) for column in OUTBOUND_RECORD_COLUMNS])
+
+    content = "\ufeff" + buffer.getvalue()
+    response = StreamingResponse(
+        iter([content]),
+        media_type="text/csv; charset=utf-8",
+    )
+    response.headers["Content-Disposition"] = 'attachment; filename="outbound_records.csv"'
+    return response
+

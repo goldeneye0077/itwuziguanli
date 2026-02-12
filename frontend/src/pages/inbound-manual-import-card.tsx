@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   createAdminAssets,
@@ -59,10 +59,20 @@ function toCsv(rows: Array<readonly string[]>): string {
 
 export function InboundManualImportCard(props: {
   readonly accessToken: string;
+  readonly canReadInventory: boolean;
+  readonly canConfirmInbound: boolean;
+  readonly canPrintTag: boolean;
   readonly onError: (message: string) => void;
   readonly onSuccess: (message: string) => void;
 }): JSX.Element {
-  const { accessToken, onError, onSuccess } = props;
+  const {
+    accessToken,
+    canReadInventory,
+    canConfirmInbound,
+    canPrintTag,
+    onError,
+    onSuccess,
+  } = props;
 
   const scanInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -101,6 +111,13 @@ export function InboundManualImportCard(props: {
     let cancelled = false;
 
     async function loadBase(): Promise<void> {
+      if (!canReadInventory) {
+        onError("当前账号缺少 INVENTORY:READ 权限，无法加载入库基础数据。");
+        setIsLoadingCategories(false);
+        setIsLoadingSkus(false);
+        return;
+      }
+
       setIsLoadingCategories(true);
       setIsLoadingSkus(true);
       try {
@@ -129,7 +146,7 @@ export function InboundManualImportCard(props: {
     return () => {
       cancelled = true;
     };
-  }, [accessToken, onError]);
+  }, [accessToken, canReadInventory, onError]);
 
   useEffect(() => {
     setCreatedAssets([]);
@@ -188,6 +205,10 @@ export function InboundManualImportCard(props: {
     if (!accessToken) {
       return;
     }
+    if (!canConfirmInbound) {
+      onError("当前账号缺少入库提交权限。");
+      return;
+    }
 
     setIsSubmitting(true);
     setCreatedAssets([]);
@@ -242,6 +263,10 @@ export function InboundManualImportCard(props: {
   }
 
   function downloadCsv(): void {
+    if (!canPrintTag) {
+      onError("当前账号缺少标签导出权限。");
+      return;
+    }
     if (!createdAssets.length) {
       onError("当前没有可导出的入库结果。");
       return;
@@ -519,7 +544,7 @@ export function InboundManualImportCard(props: {
           <button
             className="auth-submit"
             type="button"
-            disabled={isSubmitting}
+            disabled={isSubmitting || !canConfirmInbound}
             onClick={() => void handleSubmit()}
           >
             {isSubmitting ? "入库中..." : "提交入库"}
@@ -528,7 +553,7 @@ export function InboundManualImportCard(props: {
             <button
               className="app-shell__header-action"
               type="button"
-              disabled={!createdAssets.length}
+              disabled={!createdAssets.length || !canPrintTag}
               onClick={() => downloadCsv()}
             >
               导出本次入库 CSV

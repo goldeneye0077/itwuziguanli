@@ -1,4 +1,4 @@
-"""M06 router implementation: inbound and inventory operations."""
+﻿"""M06 router implementation: inbound and inventory operations."""
 
 from __future__ import annotations
 
@@ -49,6 +49,8 @@ from ....schemas.m06 import (
 from ....services.sku_stock_service import apply_stock_delta, get_or_create_stock_for_update
 
 router = APIRouter(tags=["M06"])
+PERMISSION_INVENTORY_READ = "INVENTORY:READ"
+PERMISSION_INVENTORY_WRITE = "INVENTORY:WRITE"
 
 
 def _to_iso8601(value: datetime) -> str:
@@ -70,12 +72,33 @@ def _next_bigint_id(db: Session, model: type[object]) -> int:
     return int(value or 0) + 1
 
 
-def _require_admin(context: AuthContext) -> None:
-    if context.roles.intersection({"ADMIN", "SUPER_ADMIN"}):
+def _require_admin(
+    context: AuthContext,
+    *,
+    required_permissions: set[str] | None = None,
+) -> None:
+    if not context.roles.intersection({"ADMIN", "SUPER_ADMIN"}):
+        raise AppException(
+            code="ROLE_INSUFFICIENT",
+            message="当前角色权限不足，无法执行此操作。",
+        )
+
+    if "SUPER_ADMIN" in context.roles:
+        return
+
+    normalized = {
+        str(value).strip().upper()
+        for value in (required_permissions or set())
+        if str(value).strip()
+    }
+    if not normalized:
+        return
+    if normalized.intersection(context.permissions):
         return
     raise AppException(
-        code="ROLE_INSUFFICIENT",
-        message="当前角色权限不足，无法执行此操作。",
+        code="PERMISSION_DENIED",
+        message="当前账号缺少执行该操作所需权限。",
+        details={"required_permissions": sorted(normalized)},
     )
 
 
@@ -383,7 +406,7 @@ def create_ocr_job(
     context: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db_session),
 ) -> ApiResponse:
-    _require_admin(context)
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_WRITE})
 
     safe_name = _sanitize_filename(file.filename or "upload.bin")
     job_id = _next_bigint_id(db, OcrInboundJob)
@@ -409,9 +432,11 @@ def create_ocr_job(
 @router.get("/inbound/ocr-jobs/{id}", response_model=ApiResponse)
 def get_ocr_job_detail(
     id: int,
-    _: AuthContext = Depends(get_auth_context),
+    context: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db_session),
 ) -> ApiResponse:
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_READ})
+
     job = db.get(OcrInboundJob, id)
     if job is None:
         raise AppException(
@@ -436,7 +461,7 @@ def confirm_ocr_job(
     context: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db_session),
 ) -> ApiResponse:
-    _require_admin(context)
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_WRITE})
 
     job = db.get(OcrInboundJob, id)
     if job is None:
@@ -515,7 +540,7 @@ def list_admin_skus(
     context: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db_session),
 ) -> ApiResponse:
-    _require_admin(context)
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_READ})
 
     stmt = select(Sku)
     if sku_id is not None:
@@ -544,7 +569,7 @@ def create_admin_sku(
     context: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db_session),
 ) -> ApiResponse:
-    _require_admin(context)
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_WRITE})
 
     record = _create_sku(db, payload=payload)
     db.commit()
@@ -559,7 +584,7 @@ def update_admin_sku(
     context: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db_session),
 ) -> ApiResponse:
-    _require_admin(context)
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_WRITE})
 
     record = db.get(Sku, id)
     if record is None:
@@ -643,7 +668,7 @@ def delete_admin_sku(
     context: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db_session),
 ) -> ApiResponse:
-    _require_admin(context)
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_WRITE})
 
     record = db.get(Sku, id)
     if record is None:
@@ -713,7 +738,7 @@ def list_admin_assets(
     context: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db_session),
 ) -> ApiResponse:
-    _require_admin(context)
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_READ})
 
     stmt = select(Asset)
     if sku_id is not None:
@@ -731,7 +756,7 @@ def create_admin_assets(
     context: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db_session),
 ) -> ApiResponse:
-    _require_admin(context)
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_WRITE})
 
     created_assets = _create_assets_for_sku(
         db,
@@ -760,7 +785,7 @@ def update_admin_asset(
     context: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db_session),
 ) -> ApiResponse:
-    _require_admin(context)
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_WRITE})
 
     asset = db.get(Asset, id)
     if asset is None:
@@ -828,7 +853,7 @@ def delete_admin_asset(
     context: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db_session),
 ) -> ApiResponse:
-    _require_admin(context)
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_WRITE})
 
     asset = db.get(Asset, id)
     if asset is None:
@@ -897,7 +922,7 @@ def get_inventory_summary(
     context: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db_session),
 ) -> ApiResponse:
-    _require_admin(context)
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_READ})
 
     sku_stmt = select(Sku)
     if sku_id is not None:
@@ -1069,7 +1094,7 @@ def create_admin_category(
     context: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db_session),
 ) -> ApiResponse:
-    _require_admin(context)
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_WRITE})
 
     name = _normalize_category_name(payload.name)
     parent_id = payload.parent_id
@@ -1090,7 +1115,7 @@ def update_admin_category(
     context: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db_session),
 ) -> ApiResponse:
-    _require_admin(context)
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_WRITE})
 
     record = db.get(Category, id)
     if record is None:
@@ -1113,7 +1138,7 @@ def delete_admin_category(
     context: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db_session),
 ) -> ApiResponse:
-    _require_admin(context)
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_WRITE})
 
     record = db.get(Category, id)
     if record is None:
@@ -1169,7 +1194,7 @@ def inbound_sku_stock(
     context: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db_session),
 ) -> ApiResponse:
-    _require_admin(context)
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_WRITE})
     _require_quantity_sku(db, sku_id=sku_id)
 
     occurred_at = (
@@ -1206,7 +1231,7 @@ def outbound_sku_stock(
     context: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db_session),
 ) -> ApiResponse:
-    _require_admin(context)
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_WRITE})
     _require_quantity_sku(db, sku_id=sku_id)
 
     occurred_at = (
@@ -1243,7 +1268,7 @@ def adjust_sku_stock(
     context: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db_session),
 ) -> ApiResponse:
-    _require_admin(context)
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_WRITE})
     _require_quantity_sku(db, sku_id=sku_id)
 
     occurred_at = (
@@ -1286,7 +1311,7 @@ def list_sku_stock_flows(
     context: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db_session),
 ) -> ApiResponse:
-    _require_admin(context)
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_READ})
     _require_quantity_sku(db, sku_id=sku_id)
 
     stmt = (
@@ -1346,7 +1371,7 @@ def export_sku_stock_flows_csv(
     context: AuthContext = Depends(get_auth_context),
     db: Session = Depends(get_db_session),
 ) -> StreamingResponse:
-    _require_admin(context)
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_READ})
     _require_quantity_sku(db, sku_id=sku_id)
 
     stmt = (

@@ -39,6 +39,7 @@ def _cookie_samesite(value: str) -> Literal["lax", "strict", "none"]:
 class AuthContext:
     user: SysUser
     roles: set[str]
+    permissions: set[str]
     token_claims: dict[str, Any]
 
 
@@ -282,7 +283,10 @@ def get_user_permissions(session: Session, user_id: int) -> set[str]:
         .where(RbacUserRole.user_id == user_id)
     )
     rows = session.execute(stmt).all()
-    return {f"{resource}:{action}" for resource, action in rows}
+    return {
+        f"{str(resource).strip().upper()}:{str(action).strip().upper()}"
+        for resource, action in rows
+    }
 
 
 def _ensure_token_not_blacklisted(session: Session, claims: dict[str, Any]) -> None:
@@ -331,7 +335,13 @@ def get_auth_context(
         raise AppException(code="UNAUTHORIZED", message="用户不存在。")
 
     roles = get_user_roles(db, user.id)
-    return AuthContext(user=user, roles=roles, token_claims=claims)
+    permissions = get_user_permissions(db, user.id)
+    return AuthContext(
+        user=user,
+        roles=roles,
+        permissions=permissions,
+        token_claims=claims,
+    )
 
 
 def require_roles(*role_keys: str):
@@ -343,6 +353,25 @@ def require_roles(*role_keys: str):
         raise AppException(
             code="ROLE_INSUFFICIENT",
             message="当前角色无权执行该操作。",
+        )
+
+    return _dependency
+
+
+def require_permissions(*permission_keys: str, allow_super_admin: bool = True):
+    expected_permissions = {value.strip().upper() for value in permission_keys if value}
+
+    def _dependency(context: AuthContext = Depends(get_auth_context)) -> AuthContext:
+        if not expected_permissions:
+            return context
+        if allow_super_admin and "SUPER_ADMIN" in context.roles:
+            return context
+        if expected_permissions.intersection(context.permissions):
+            return context
+        raise AppException(
+            code="PERMISSION_DENIED",
+            message="当前账号缺少执行该操作所需权限。",
+            details={"required_permissions": sorted(expected_permissions)},
         )
 
     return _dependency

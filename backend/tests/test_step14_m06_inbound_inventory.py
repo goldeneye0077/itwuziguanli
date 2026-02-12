@@ -23,7 +23,7 @@ from app.models.enums import AssetStatus, OcrJobStatus, StockFlowAction
 from app.models.inbound import OcrInboundJob
 from app.models.inventory import Asset, StockFlow
 from app.models.organization import Department, SysUser
-from app.models.rbac import RbacRole, RbacUserRole
+from app.models.rbac import RbacPermission, RbacRole, RbacRolePermission, RbacUserRole
 
 
 def _seed_data(session: Session) -> None:
@@ -55,6 +55,28 @@ def _seed_data(session: Session) -> None:
         [
             RbacRole(id=1, role_key="USER", role_name="User", is_system=True),
             RbacRole(id=2, role_key="ADMIN", role_name="Admin", is_system=True),
+        ]
+    )
+    session.add_all(
+        [
+            RbacPermission(
+                id=1,
+                resource="INVENTORY",
+                action="READ",
+                name="INVENTORY:READ",
+            ),
+            RbacPermission(
+                id=2,
+                resource="INVENTORY",
+                action="WRITE",
+                name="INVENTORY:WRITE",
+            ),
+        ]
+    )
+    session.add_all(
+        [
+            RbacRolePermission(id=1, role_id=2, permission_id=1, created_at=now),
+            RbacRolePermission(id=2, role_id=2, permission_id=2, created_at=now),
         ]
     )
     session.add_all(

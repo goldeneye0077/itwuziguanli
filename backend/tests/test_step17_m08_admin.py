@@ -30,7 +30,13 @@ from app.models.enums import (
 from app.models.inventory import Asset
 from app.models.organization import Department, SysUser
 from app.models.portal import Announcement
-from app.models.rbac import RbacPermission, RbacRole, RbacRolePermission, RbacUserRole
+from app.models.rbac import (
+    RbacPermission,
+    RbacRole,
+    RbacRolePermission,
+    RbacUiGuard,
+    RbacUserRole,
+)
 
 
 def _seed_data(session: Session) -> None:
@@ -97,6 +103,18 @@ def _seed_data(session: Session) -> None:
                 action="READ",
                 name="ANALYTICS:READ",
             ),
+            RbacPermission(
+                id=3,
+                resource="RBAC_ADMIN",
+                action="UPDATE",
+                name="RBAC_ADMIN:UPDATE",
+            ),
+            RbacPermission(
+                id=4,
+                resource="INVENTORY",
+                action="READ",
+                name="INVENTORY:READ",
+            ),
         ]
     )
     session.add_all(
@@ -104,6 +122,9 @@ def _seed_data(session: Session) -> None:
             RbacRolePermission(id=1, role_id=2, permission_id=1, created_at=now),
             RbacRolePermission(id=2, role_id=3, permission_id=1, created_at=now),
             RbacRolePermission(id=3, role_id=3, permission_id=2, created_at=now),
+            RbacRolePermission(id=4, role_id=2, permission_id=4, created_at=now),
+            RbacRolePermission(id=5, role_id=3, permission_id=3, created_at=now),
+            RbacRolePermission(id=6, role_id=3, permission_id=4, created_at=now),
         ]
     )
     session.add_all(
@@ -314,6 +335,63 @@ def test_m08_rbac_happy_path_and_deterministic_replacement() -> None:
         assert ("REPORTS", "READ") in permission_pairs
         assert ("REPORTS", "EXPORT") in permission_pairs
 
+        list_ui_guards_response = client.get("/api/v1/rbac/ui-guards", headers=headers)
+        assert list_ui_guards_response.status_code == 200
+        list_ui_guards_payload = list_ui_guards_response.json()
+        assert list_ui_guards_payload["success"] is True
+        default_route_keys = {
+            item["key"] for item in list_ui_guards_payload["data"]["routes"]
+        }
+        default_action_keys = {
+            item["key"] for item in list_ui_guards_payload["data"]["actions"]
+        }
+        assert "/admin/rbac" in default_route_keys
+        assert "rbac.save-role-permissions" in default_action_keys
+
+        replace_ui_guards_response = client.put(
+            "/api/v1/admin/rbac/ui-guards",
+            headers=headers,
+            json={
+                "routes": [
+                    {"key": "/materials", "required_permissions": ["INVENTORY:READ"]},
+                    {"key": "/inventory", "required_permissions": ["INVENTORY:READ"]},
+                ],
+                "actions": [
+                    {
+                        "key": "materials.manage-skus",
+                        "required_permissions": ["INVENTORY:WRITE"],
+                    }
+                ],
+            },
+        )
+        assert replace_ui_guards_response.status_code == 200
+        replace_ui_guards_payload = replace_ui_guards_response.json()
+        assert replace_ui_guards_payload["success"] is True
+        assert replace_ui_guards_payload["data"]["routes"] == [
+            {"key": "/inventory", "required_permissions": ["INVENTORY:READ"]},
+            {"key": "/materials", "required_permissions": ["INVENTORY:READ"]},
+        ]
+        assert replace_ui_guards_payload["data"]["actions"] == [
+            {"key": "materials.manage-skus", "required_permissions": ["INVENTORY:WRITE"]}
+        ]
+
+        list_ui_guards_after_replace_response = client.get(
+            "/api/v1/rbac/ui-guards",
+            headers=headers,
+        )
+        assert list_ui_guards_after_replace_response.status_code == 200
+        list_ui_guards_after_replace_payload = (
+            list_ui_guards_after_replace_response.json()
+        )
+        assert list_ui_guards_after_replace_payload["success"] is True
+        assert list_ui_guards_after_replace_payload["data"]["routes"] == [
+            {"key": "/inventory", "required_permissions": ["INVENTORY:READ"]},
+            {"key": "/materials", "required_permissions": ["INVENTORY:READ"]},
+        ]
+        assert list_ui_guards_after_replace_payload["data"]["actions"] == [
+            {"key": "materials.manage-skus", "required_permissions": ["INVENTORY:WRITE"]}
+        ]
+
         replace_user_roles_response = client.put(
             "/api/v1/admin/users/3/roles",
             headers=headers,
@@ -349,13 +427,28 @@ def test_m08_rbac_happy_path_and_deterministic_replacement() -> None:
         ).all()
         assert user_role_keys == ["AUDITOR", "USER"]
 
+        ui_guards = session.scalars(
+            select(RbacUiGuard)
+            .order_by(RbacUiGuard.guard_type.asc(), RbacUiGuard.guard_key.asc())
+        ).all()
+        assert [
+            (item.guard_type, item.guard_key, item.required_permissions)
+            for item in ui_guards
+        ] == [
+            ("ACTION", "materials.manage-skus", "INVENTORY:WRITE"),
+            ("ROUTE", "/inventory", "INVENTORY:READ"),
+            ("ROUTE", "/materials", "INVENTORY:READ"),
+        ]
+
 
 def test_m08_crud_resources_and_role_guards() -> None:
     client, _ = _build_client()
 
     with client:
+        super_admin_token = _login_and_get_access_token(client, "S0001")
         admin_token = _login_and_get_access_token(client, "A0001")
         user_token = _login_and_get_access_token(client, "U0001")
+        super_headers = {"Authorization": f"Bearer {super_admin_token}"}
         admin_headers = {"Authorization": f"Bearer {admin_token}"}
         user_headers = {"Authorization": f"Bearer {user_token}"}
 
@@ -370,7 +463,7 @@ def test_m08_crud_resources_and_role_guards() -> None:
         for resource in resources:
             response = client.get(
                 f"/api/v1/admin/crud/{resource}?page=1&page_size=2",
-                headers=admin_headers,
+                headers=super_headers,
             )
             assert response.status_code == 200
             payload = response.json()
@@ -382,7 +475,7 @@ def test_m08_crud_resources_and_role_guards() -> None:
 
         filter_users_response = client.get(
             "/api/v1/admin/crud/users?q=admin&page=1&page_size=20",
-            headers=admin_headers,
+            headers=super_headers,
         )
         assert filter_users_response.status_code == 200
         filter_users_payload = filter_users_response.json()
@@ -391,12 +484,112 @@ def test_m08_crud_resources_and_role_guards() -> None:
         }
         assert "A0001" in filtered_employee_nos
 
-        forbidden_rbac_response = client.get(
-            "/api/v1/admin/rbac/roles",
-            headers=admin_headers,
+        create_category_response = client.post(
+            "/api/v1/admin/crud/categories",
+            headers=super_headers,
+            json={"name": "Step17Category", "parent_id": None},
         )
+        assert create_category_response.status_code == 200
+        created_category = create_category_response.json()["data"]["item"]
+        assert created_category["name"] == "Step17Category"
+
+        update_category_response = client.put(
+            f"/api/v1/admin/crud/categories/{created_category['id']}",
+            headers=super_headers,
+            json={"name": "Step17CategoryUpdated"},
+        )
+        assert update_category_response.status_code == 200
+        assert (
+            update_category_response.json()["data"]["item"]["name"]
+            == "Step17CategoryUpdated"
+        )
+
+        delete_category_response = client.delete(
+            f"/api/v1/admin/crud/categories/{created_category['id']}",
+            headers=super_headers,
+        )
+        assert delete_category_response.status_code == 200
+        assert delete_category_response.json()["data"]["deleted"] is True
+
+        create_application_response = client.post(
+            "/api/v1/admin/crud/applications",
+            headers=super_headers,
+            json={
+                "applicant_user_id": 3,
+                "type": "APPLY",
+                "delivery_type": "PICKUP",
+                "title": "Step17 CRUD Application",
+            },
+        )
+        assert create_application_response.status_code == 200
+        created_application = create_application_response.json()["data"]["item"]
+        assert created_application["title"] == "Step17 CRUD Application"
+
+        update_application_response = client.put(
+            f"/api/v1/admin/crud/applications/{created_application['id']}",
+            headers=super_headers,
+            json={"status": "DONE"},
+        )
+        assert update_application_response.status_code == 200
+        assert update_application_response.json()["data"]["item"]["status"] == "DONE"
+
+        delete_application_response = client.delete(
+            f"/api/v1/admin/crud/applications/{created_application['id']}",
+            headers=super_headers,
+        )
+        assert delete_application_response.status_code == 200
+        delete_application_payload = delete_application_response.json()
+        assert delete_application_payload["data"]["deleted"] is True
+        assert delete_application_payload["data"]["status"] == "CANCELLED"
+
+        create_announcement_response = client.post(
+            "/api/v1/admin/crud/announcements",
+            headers=super_headers,
+            json={
+                "title": "Step17 Announcement",
+                "content": "Step17 Announcement Content",
+                "author_user_id": 1,
+                "status": "DRAFT",
+            },
+        )
+        assert create_announcement_response.status_code == 200
+        created_announcement = create_announcement_response.json()["data"]["item"]
+        assert created_announcement["title"] == "Step17 Announcement"
+
+        update_announcement_response = client.put(
+            f"/api/v1/admin/crud/announcements/{created_announcement['id']}",
+            headers=super_headers,
+            json={"status": "PUBLISHED"},
+        )
+        assert update_announcement_response.status_code == 200
+        assert (
+            update_announcement_response.json()["data"]["item"]["status"] == "PUBLISHED"
+        )
+
+        delete_announcement_response = client.delete(
+            f"/api/v1/admin/crud/announcements/{created_announcement['id']}",
+            headers=super_headers,
+        )
+        assert delete_announcement_response.status_code == 200
+        assert delete_announcement_response.json()["data"]["deleted"] is True
+
+        forbidden_rbac_response = client.get("/api/v1/admin/rbac/roles", headers=admin_headers)
         assert forbidden_rbac_response.status_code == 403
         assert forbidden_rbac_response.json()["error"]["code"] == "ROLE_INSUFFICIENT"
+
+        user_list_ui_guards_response = client.get(
+            "/api/v1/rbac/ui-guards",
+            headers=user_headers,
+        )
+        assert user_list_ui_guards_response.status_code == 200
+        assert user_list_ui_guards_response.json()["success"] is True
+
+        forbidden_crud_response = client.get(
+            "/api/v1/admin/crud/users",
+            headers=admin_headers,
+        )
+        assert forbidden_crud_response.status_code == 403
+        assert forbidden_crud_response.json()["error"]["code"] == "ROLE_INSUFFICIENT"
 
         forbidden_crud_response = client.get(
             "/api/v1/admin/crud/users",

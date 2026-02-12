@@ -32,12 +32,20 @@ from app.models.enums import (
     DeliveryType,
     NotifyChannel,
     NotifyStatus,
+    SkuStockFlowAction,
+    SkuStockMode,
     StockFlowAction,
 )
 from app.models.inventory import Asset, StockFlow
 from app.models.notification import NotificationOutbox, UserAddress
 from app.models.organization import Department, SysUser
-from app.models.rbac import RbacRole, RbacUserRole
+from app.models.rbac import (
+    RbacPermission,
+    RbacRole,
+    RbacRolePermission,
+    RbacUserRole,
+)
+from app.models.sku_stock import SkuStockFlow
 
 
 def _seed_data(session: Session) -> None:
@@ -79,6 +87,22 @@ def _seed_data(session: Session) -> None:
             RbacRole(id=2, role_key="ADMIN", role_name="Admin", is_system=True),
         ]
     )
+    session.add(
+        RbacPermission(
+            id=11,
+            resource="OUTBOUND",
+            action="READ",
+            name="OUTBOUND:READ",
+        )
+    )
+    session.add(
+        RbacRolePermission(
+            id=11,
+            role_id=2,
+            permission_id=11,
+            created_at=now,
+        )
+    )
     session.add_all(
         [
             RbacUserRole(id=1, user_id=1, role_id=1, created_at=now),
@@ -109,6 +133,17 @@ def _seed_data(session: Session) -> None:
                 reference_price=Decimal("3299.00"),
                 cover_url=None,
                 safety_stock_threshold=1,
+            ),
+            Sku(
+                id=3,
+                category_id=1,
+                brand="HP",
+                model="LaserJet Toner",
+                spec="Q2612A",
+                reference_price=Decimal("399.00"),
+                cover_url=None,
+                stock_mode=SkuStockMode.QUANTITY,
+                safety_stock_threshold=5,
             ),
         ]
     )
@@ -142,6 +177,20 @@ def _seed_data(session: Session) -> None:
                 pickup_code="222203",
                 pickup_qr_string="pickup://application/203?code=222203",
             ),
+            Application(
+                id=204,
+                applicant_user_id=1,
+                type=ApplicationType.APPLY,
+                status=ApplicationStatus.OUTBOUNDED,
+                delivery_type=DeliveryType.PICKUP,
+                pickup_code="222204",
+                pickup_qr_string="pickup://application/204?code=222204",
+                title="关于打印耗材的申请",
+                applicant_name_snapshot="Applicant Snapshot",
+                applicant_department_snapshot="IT",
+                applicant_phone_snapshot="13800000000",
+                applicant_job_title_snapshot="Engineer",
+            ),
         ]
     )
 
@@ -155,6 +204,9 @@ def _seed_data(session: Session) -> None:
             ),
             ApplicationItem(
                 id=3003, application_id=203, sku_id=1, quantity=1, note=None
+            ),
+            ApplicationItem(
+                id=3004, application_id=204, sku_id=3, quantity=3, note=None
             ),
         ]
     )
@@ -200,6 +252,21 @@ def _seed_data(session: Session) -> None:
             ApplicationAsset(id=4002, application_id=202, asset_id=12),
             ApplicationAsset(id=4003, application_id=203, asset_id=13),
         ]
+    )
+    session.add(
+        SkuStockFlow(
+            id=9001,
+            sku_id=3,
+            action=SkuStockFlowAction.OUTBOUND,
+            on_hand_delta=-3,
+            reserved_delta=-3,
+            on_hand_qty_after=20,
+            reserved_qty_after=2,
+            operator_user_id=2,
+            related_application_id=204,
+            occurred_at=now,
+            meta_json={"event": "confirm_pickup"},
+        )
     )
 
     session.add(
@@ -442,3 +509,69 @@ def test_m05_outbound_pickup_and_ship_transitions() -> None:
         assert logistics.receiver_name == "Alice"
         assert logistics.carrier == "SF"
         assert logistics.tracking_no == "SF1234567890"
+
+
+def test_m05_outbound_records_and_export() -> None:
+    client, _ = _build_client()
+    with client:
+        admin_token = _login_and_get_access_token(client, "U0002")
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        confirm_pickup_response = client.post(
+            "/api/v1/outbound/confirm-pickup",
+            headers=headers,
+            json={"verify_type": "APPLICATION_ID", "value": "201"},
+        )
+        assert confirm_pickup_response.status_code == 200
+
+        ship_response = client.post(
+            "/api/v1/outbound/ship",
+            headers=headers,
+            json={
+                "application_id": 202,
+                "carrier": "SF",
+                "tracking_no": "SF1234567890",
+            },
+        )
+        assert ship_response.status_code == 200
+
+        records_response = client.get(
+            "/api/v1/outbound/records?page=1&page_size=50",
+            headers=headers,
+        )
+        assert records_response.status_code == 200
+        records_payload = records_response.json()
+        assert records_payload["success"] is True
+        assert records_payload["data"]["meta"]["total"] >= 1
+
+        items = records_payload["data"]["items"]
+        assert any(item["record_type"] == "ASSET" for item in items)
+        assert any(item["record_type"] == "SKU_QUANTITY" for item in items)
+
+        quantity_item = next(
+            item for item in items if item["record_key"] == "SKU_FLOW-9001"
+        )
+        assert quantity_item["application_id"] == 204
+        assert quantity_item["quantity"] == 3
+        assert quantity_item["applicant_name_snapshot"] == "Applicant Snapshot"
+        assert quantity_item["applicant_department_snapshot"] == "IT"
+
+        filtered_response = client.get(
+            "/api/v1/outbound/records?page=1&page_size=20&record_type=ASSET",
+            headers=headers,
+        )
+        assert filtered_response.status_code == 200
+        filtered_payload = filtered_response.json()
+        assert filtered_payload["success"] is True
+        assert filtered_payload["data"]["items"]
+        assert all(item["record_type"] == "ASSET" for item in filtered_payload["data"]["items"])
+
+        export_response = client.get(
+            "/api/v1/outbound/records/export?record_type=SKU_QUANTITY",
+            headers=headers,
+        )
+        assert export_response.status_code == 200
+        assert "text/csv" in export_response.headers.get("content-type", "")
+        csv_text = export_response.content.decode("utf-8-sig")
+        assert "record_key,record_type,action,occurred_at" in csv_text
+        assert "SKU_FLOW-9001" in csv_text

@@ -42,4 +42,8 @@ class SysUser(TimestampMixin, Base):
         nullable=False,
     )
     email: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    department_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    section_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    mobile_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    job_title: Mapped[str | None] = mapped_column(String(128), nullable=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)

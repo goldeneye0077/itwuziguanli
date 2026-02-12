@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import {
@@ -15,6 +15,7 @@ import {
   type CategoryTreeNode,
   type SkuStockMode,
 } from "../api";
+import { hasActionPermission, PERMISSION_KEYS } from "../permissions";
 import { useAuthSession } from "../stores";
 import { parsePositiveInteger, toErrorMessage } from "./page-helpers";
 
@@ -58,8 +59,19 @@ function toStockModeLabel(mode: SkuStockMode): string {
 }
 
 export function MaterialsPage(): JSX.Element {
-  const { state } = useAuthSession();
+  const { state, hasPermission, userRoles, userPermissions } = useAuthSession();
   const accessToken = state.accessToken;
+  const canReadMaterials = hasPermission(PERMISSION_KEYS.inventoryRead);
+  const canManageCategories = hasActionPermission(
+    "materials.manage-categories",
+    userRoles,
+    userPermissions,
+  );
+  const canManageSkus = hasActionPermission(
+    "materials.manage-skus",
+    userRoles,
+    userPermissions,
+  );
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -122,6 +134,10 @@ export function MaterialsPage(): JSX.Element {
   const token = accessToken;
 
   const loadCategories = useCallback(async (): Promise<void> => {
+    if (!canReadMaterials) {
+      setErrorMessage("当前账号缺少 INVENTORY:READ 权限，无法加载分类。");
+      return;
+    }
     setIsLoadingCategories(true);
     setErrorMessage(null);
     try {
@@ -138,9 +154,13 @@ export function MaterialsPage(): JSX.Element {
     } finally {
       setIsLoadingCategories(false);
     }
-  }, [newSkuCategoryId, token]);
+  }, [canReadMaterials, newSkuCategoryId, token]);
 
   const loadSkus = useCallback(async (): Promise<void> => {
+    if (!canReadMaterials) {
+      setErrorMessage("当前账号缺少 INVENTORY:READ 权限，无法查询物料。");
+      return;
+    }
     const normalizedSkuId = skuQuerySkuId.trim();
     const parsedSkuId = normalizedSkuId ? parsePositiveInteger(normalizedSkuId) : null;
     if (normalizedSkuId && parsedSkuId === null) {
@@ -173,7 +193,7 @@ export function MaterialsPage(): JSX.Element {
     } finally {
       setIsLoadingSkus(false);
     }
-  }, [skuQueryCategoryId, skuQueryKeyword, skuQuerySkuId, token]);
+  }, [canReadMaterials, skuQueryCategoryId, skuQueryKeyword, skuQuerySkuId, token]);
 
   useEffect(() => {
     void loadCategories();
@@ -181,6 +201,10 @@ export function MaterialsPage(): JSX.Element {
   }, [loadCategories, loadSkus]);
 
   async function handleCreateCategory(): Promise<void> {
+    if (!canManageCategories) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法创建分类。");
+      return;
+    }
     if (!newCategoryName.trim()) {
       setErrorMessage("分类名称不能为空。");
       return;
@@ -225,6 +249,10 @@ export function MaterialsPage(): JSX.Element {
   }
 
   async function handleUpdateCategory(): Promise<void> {
+    if (!canManageCategories) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法更新分类。");
+      return;
+    }
     if (!editingCategoryId) {
       return;
     }
@@ -259,6 +287,10 @@ export function MaterialsPage(): JSX.Element {
   }
 
   async function handleDeleteCategory(categoryId: number): Promise<void> {
+    if (!canManageCategories) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法删除分类。");
+      return;
+    }
     if (!window.confirm(`确认删除分类 #${categoryId}？\n提示：有子分类或被物料引用将无法删除。`)) {
       return;
     }
@@ -278,6 +310,10 @@ export function MaterialsPage(): JSX.Element {
   }
 
   async function handleUploadNewSkuCover(file: File): Promise<void> {
+    if (!canManageSkus) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法上传封面。");
+      return;
+    }
     setIsUploadingNewSkuCover(true);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -293,6 +329,10 @@ export function MaterialsPage(): JSX.Element {
   }
 
   async function handleCreateSku(): Promise<void> {
+    if (!canManageSkus) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法创建物料。");
+      return;
+    }
     const parsedCategoryId = parsePositiveInteger(newSkuCategoryId);
     if (!parsedCategoryId) {
       setErrorMessage("分类不能为空。");
@@ -369,6 +409,10 @@ export function MaterialsPage(): JSX.Element {
   }
 
   async function handleUploadEditSkuCover(file: File): Promise<void> {
+    if (!canManageSkus) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法上传封面。");
+      return;
+    }
     setIsUploadingEditSkuCover(true);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -384,6 +428,10 @@ export function MaterialsPage(): JSX.Element {
   }
 
   async function handleUpdateSku(): Promise<void> {
+    if (!canManageSkus) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法更新物料。");
+      return;
+    }
     if (!editingSkuId) {
       return;
     }
@@ -434,6 +482,10 @@ export function MaterialsPage(): JSX.Element {
   }
 
   async function handleDeleteSku(skuId: number): Promise<void> {
+    if (!canManageSkus) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法删除物料。");
+      return;
+    }
     if (!window.confirm(`确认删除物料 #${skuId}？\n提示：已被资产/库存/申请引用将无法删除。`)) {
       return;
     }
@@ -502,7 +554,7 @@ export function MaterialsPage(): JSX.Element {
               <button
                 className="app-shell__header-action"
                 type="button"
-                disabled={isLoadingCategories}
+                disabled={isLoadingCategories || !canReadMaterials}
                 onClick={() => {
                   void loadCategories();
                 }}
@@ -542,7 +594,7 @@ export function MaterialsPage(): JSX.Element {
                 <button
                   className="auth-submit"
                   type="button"
-                  disabled={isCreatingCategory}
+                  disabled={isCreatingCategory || !canManageCategories}
                   onClick={() => {
                     void handleCreateCategory();
                   }}
@@ -587,7 +639,7 @@ export function MaterialsPage(): JSX.Element {
                     <button
                       className="auth-submit"
                       type="button"
-                      disabled={isUpdatingCategory}
+                      disabled={isUpdatingCategory || !canManageCategories}
                       onClick={() => {
                         void handleUpdateCategory();
                       }}
@@ -597,7 +649,7 @@ export function MaterialsPage(): JSX.Element {
                     <button
                       className="app-shell__header-action"
                       type="button"
-                      disabled={isUpdatingCategory}
+                      disabled={isUpdatingCategory || !canManageCategories}
                       onClick={() => {
                         handleCancelEditCategory();
                       }}
@@ -635,6 +687,7 @@ export function MaterialsPage(): JSX.Element {
                             <button
                               className="app-shell__header-action"
                               type="button"
+                              disabled={!canManageCategories}
                               onClick={() => {
                                 handleStartEditCategory(option);
                               }}
@@ -644,7 +697,7 @@ export function MaterialsPage(): JSX.Element {
                             <button
                               className="app-shell__header-action inbound-action-danger"
                               type="button"
-                              disabled={deletingCategoryId === option.id}
+                              disabled={deletingCategoryId === option.id || !canManageCategories}
                               onClick={() => {
                                 void handleDeleteCategory(option.id);
                               }}
@@ -714,7 +767,7 @@ export function MaterialsPage(): JSX.Element {
               <button
                 className="app-shell__header-action"
                 type="button"
-                disabled={isLoadingSkus}
+                disabled={isLoadingSkus || !canReadMaterials}
                 onClick={() => {
                   void loadSkus();
                 }}
@@ -724,7 +777,7 @@ export function MaterialsPage(): JSX.Element {
               <button
                 className="app-shell__header-action"
                 type="button"
-                disabled={isLoadingSkus}
+                disabled={isLoadingSkus || !canReadMaterials}
                 onClick={() => {
                   setSkuQuerySkuId("");
                   setSkuQueryCategoryId("");
@@ -780,6 +833,7 @@ export function MaterialsPage(): JSX.Element {
                             <button
                               className="app-shell__header-action"
                               type="button"
+                              disabled={!canManageSkus}
                               onClick={() => {
                                 handleStartEditSku(item);
                               }}
@@ -789,7 +843,7 @@ export function MaterialsPage(): JSX.Element {
                             <button
                               className="app-shell__header-action inbound-action-danger"
                               type="button"
-                              disabled={deletingSkuId === item.id}
+                              disabled={deletingSkuId === item.id || !canManageSkus}
                               onClick={() => {
                                 void handleDeleteSku(item.id);
                               }}
@@ -818,7 +872,7 @@ export function MaterialsPage(): JSX.Element {
                     <select
                       value={newSkuCategoryId}
                       onChange={(event) => setNewSkuCategoryId(event.target.value)}
-                      disabled={!categoryOptions.length}
+                      disabled={!categoryOptions.length || !canManageSkus}
                     >
                       {categoryOptions.length ? (
                         categoryOptions.map((option) => (
@@ -880,7 +934,7 @@ export function MaterialsPage(): JSX.Element {
                       className="inbound-file-input"
                       type="file"
                       accept="image/png,image/jpeg,image/webp"
-                      disabled={isUploadingNewSkuCover}
+                      disabled={isUploadingNewSkuCover || !canManageSkus}
                       onChange={(event) => {
                         const file = event.target.files?.[0] ?? null;
                         if (file) {
@@ -906,7 +960,7 @@ export function MaterialsPage(): JSX.Element {
                 <button
                   className="auth-submit"
                   type="button"
-                  disabled={isCreatingSku || !categoryOptions.length}
+                  disabled={isCreatingSku || !categoryOptions.length || !canManageSkus}
                   onClick={() => {
                     void handleCreateSku();
                   }}
@@ -930,7 +984,7 @@ export function MaterialsPage(): JSX.Element {
                       <select
                         value={editSkuCategoryId}
                         onChange={(event) => setEditSkuCategoryId(event.target.value)}
-                        disabled={!categoryOptions.length}
+                        disabled={!categoryOptions.length || !canManageSkus}
                       >
                         {categoryOptions.map((option) => (
                           <option key={option.id} value={option.id}>
@@ -988,7 +1042,7 @@ export function MaterialsPage(): JSX.Element {
                         className="inbound-file-input"
                         type="file"
                         accept="image/png,image/jpeg,image/webp"
-                        disabled={isUploadingEditSkuCover}
+                        disabled={isUploadingEditSkuCover || !canManageSkus}
                         onChange={(event) => {
                           const file = event.target.files?.[0] ?? null;
                           if (file) {
@@ -1015,7 +1069,7 @@ export function MaterialsPage(): JSX.Element {
                     <button
                       className="auth-submit"
                       type="button"
-                      disabled={isUpdatingSku}
+                      disabled={isUpdatingSku || !canManageSkus}
                       onClick={() => {
                         void handleUpdateSku();
                       }}
@@ -1025,7 +1079,7 @@ export function MaterialsPage(): JSX.Element {
                     <button
                       className="app-shell__header-action"
                       type="button"
-                      disabled={isUpdatingSku}
+                      disabled={isUpdatingSku || !canManageSkus}
                       onClick={() => {
                         handleCancelEditSku();
                       }}

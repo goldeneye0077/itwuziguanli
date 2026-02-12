@@ -96,3 +96,16 @@ class RbacUserRole(Base):
         nullable=False,
         server_default=func.now(),
     )
+
+
+class RbacUiGuard(TimestampMixin, Base):
+    __tablename__ = "rbac_ui_guard"
+    __table_args__ = (
+        UniqueConstraint("guard_type", "guard_key", name="uk_rbac_ui_guard_type_key"),
+        Index("idx_rbac_ui_guard_type", "guard_type"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    guard_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    guard_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    required_permissions: Mapped[str] = mapped_column(String(2000), nullable=False)

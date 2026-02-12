@@ -11,11 +11,18 @@ import {
 
 import {
   AuthApiError,
+  fetchRbacUiGuards,
   loginWithPassword,
   logoutWithToken,
   type LoginResult,
   type SessionUser,
 } from "../api";
+import {
+  applyPermissionMappingConfig,
+  resetPermissionMappingConfig,
+  hasAnyPermission as hasAnyPermissionByList,
+  isSuperAdminRole,
+} from "../permissions";
 import type { AppRole } from "../routes/blueprint-routes";
 
 const SESSION_STORAGE_KEY = "pgc-auth-session-v1";
@@ -44,6 +51,9 @@ interface AuthSessionContextValue {
   readonly state: AuthSessionState;
   readonly isAuthenticated: boolean;
   readonly userRoles: readonly AppRole[];
+  readonly userPermissions: readonly string[];
+  readonly hasPermission: (...permissions: string[]) => boolean;
+  readonly hasAnyPermission: (permissions: readonly string[]) => boolean;
   readonly login: (input: LoginInput) => Promise<void>;
   readonly logout: () => Promise<void>;
   readonly clearError: () => void;
@@ -88,6 +98,10 @@ function normalizeStoredSession(candidate: unknown): StoredSession | null {
       id?: unknown;
       employeeNo?: unknown;
       name?: unknown;
+      departmentName?: unknown;
+      sectionName?: unknown;
+      mobilePhone?: unknown;
+      jobTitle?: unknown;
       roles?: unknown;
       permissions?: unknown;
     };
@@ -127,6 +141,15 @@ function normalizeStoredSession(candidate: unknown): StoredSession | null {
       id: source.user.id,
       employeeNo: source.user.employeeNo,
       name: source.user.name,
+      departmentName:
+        typeof source.user.departmentName === "string"
+          ? source.user.departmentName
+          : null,
+      sectionName:
+        typeof source.user.sectionName === "string" ? source.user.sectionName : null,
+      mobilePhone:
+        typeof source.user.mobilePhone === "string" ? source.user.mobilePhone : null,
+      jobTitle: typeof source.user.jobTitle === "string" ? source.user.jobTitle : null,
       roles,
       permissions,
     },
@@ -187,6 +210,7 @@ export function AuthSessionProvider({
   useEffect(() => {
     const storedSession = readSessionFromStorage();
     if (!storedSession) {
+      resetPermissionMappingConfig();
       clearSessionFromStorage();
       setState({
         ...AUTH_STATE_ANONYMOUS,
@@ -204,6 +228,48 @@ export function AuthSessionProvider({
       errorMessage: null,
     });
   }, []);
+
+  useEffect(() => {
+    if (!state.initialized) {
+      return;
+    }
+
+    const token = state.accessToken;
+    if (!token) {
+      resetPermissionMappingConfig();
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const guardConfig = await fetchRbacUiGuards(token);
+        if (cancelled) {
+          return;
+        }
+
+        applyPermissionMappingConfig({
+          routes: guardConfig.routes.map((item) => ({
+            routePath: item.key,
+            requiredPermissions: item.requiredPermissions,
+          })),
+          actions: guardConfig.actions.map((item) => ({
+            actionId: item.key,
+            requiredPermissions: item.requiredPermissions,
+          })),
+        });
+        setState((previous) => ({ ...previous }));
+      } catch {
+        if (!cancelled) {
+          resetPermissionMappingConfig();
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state.accessToken, state.initialized]);
 
   const login = useCallback(async (input: LoginInput) => {
     setState((previous) => ({
@@ -228,6 +294,7 @@ export function AuthSessionProvider({
           ? error.message
           : "账号或密码不正确，无法登录。";
 
+      resetPermissionMappingConfig();
       clearSessionFromStorage();
       setState({
         initialized: true,
@@ -243,6 +310,7 @@ export function AuthSessionProvider({
 
   const logout = useCallback(async () => {
     const token = state.accessToken;
+    resetPermissionMappingConfig();
     clearSessionFromStorage();
 
     setState({
@@ -271,18 +339,48 @@ export function AuthSessionProvider({
   }, []);
 
   const userRoles = state.user?.roles ?? [];
+  const userPermissions = state.user?.permissions ?? [];
   const isAuthenticated = state.initialized && Boolean(state.accessToken && state.user);
+  const hasAnyPermission = useCallback(
+    (permissions: readonly string[]): boolean => {
+      if (!permissions.length) {
+        return true;
+      }
+      if (isSuperAdminRole(userRoles)) {
+        return true;
+      }
+      return hasAnyPermissionByList(userPermissions, permissions);
+    },
+    [userPermissions, userRoles],
+  );
+  const hasPermission = useCallback(
+    (...permissions: string[]): boolean => hasAnyPermission(permissions),
+    [hasAnyPermission],
+  );
 
   const value = useMemo<AuthSessionContextValue>(
     () => ({
       state,
       isAuthenticated,
       userRoles,
+      userPermissions,
+      hasPermission,
+      hasAnyPermission,
       login,
       logout,
       clearError,
     }),
-    [clearError, isAuthenticated, login, logout, state, userRoles],
+    [
+      clearError,
+      hasAnyPermission,
+      hasPermission,
+      isAuthenticated,
+      login,
+      logout,
+      state,
+      userPermissions,
+      userRoles,
+    ],
   );
 
   return createElement(AuthSessionContext.Provider, { value }, children);

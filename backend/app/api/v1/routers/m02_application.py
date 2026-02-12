@@ -26,6 +26,7 @@ from ....models.enums import (
 from ....models.inventory import Asset, StockFlow
 from ....models.sku_stock import SkuStock
 from ....models.notification import UserAddress
+from ....models.organization import Department, SysUser
 from ....schemas.common import ApiResponse, build_success_response
 from ....schemas.m02 import (
     AiPrecheckRequest,
@@ -73,7 +74,14 @@ def _serialize_application(
         "delivery_type": application.delivery_type.value,
         "pickup_code": application.pickup_code,
         "pickup_qr_string": application.pickup_qr_string,
+        "title": application.title,
         "created_at": _to_iso8601(application.created_at),
+        "applicant_snapshot": {
+            "name": application.applicant_name_snapshot,
+            "department_name": application.applicant_department_snapshot,
+            "phone": application.applicant_phone_snapshot,
+            "job_title": application.applicant_job_title_snapshot,
+        },
         "items": [
             {
                 "id": item.id,
@@ -90,7 +98,7 @@ def _serialize_application(
             }
             for relation in assets
         ],
-        "express_address": express_address,
+        "express_address": express_address or application.express_address_snapshot,
     }
 
 
@@ -130,6 +138,35 @@ def _create_pickup_code(db: Session) -> str:
 def _next_bigint_id(db: Session, model: type[object]) -> int:
     value = db.scalar(select(func.max(getattr(model, "id"))))
     return int(value or 0) + 1
+
+
+def _build_application_title(labels: Sequence[str]) -> str:
+    names: list[str] = []
+    for raw in labels:
+        value = raw.strip()
+        if not value or value in names:
+            continue
+        names.append(value)
+    if not names:
+        return "关于物料的申请"
+    if len(names) <= 2:
+        return f"关于{'、'.join(names)}的申请"
+    return f"关于{'、'.join(names[:2])}等{len(names)}项的申请"
+
+
+def _sanitize_express_address_snapshot(
+    address: dict[str, object] | None,
+) -> dict[str, object] | None:
+    if not address:
+        return None
+    return {
+        "receiver_name": address.get("receiver_name"),
+        "receiver_phone": address.get("receiver_phone"),
+        "province": address.get("province"),
+        "city": address.get("city"),
+        "district": address.get("district"),
+        "detail": address.get("detail"),
+    }
 
 
 def _sku_query(
@@ -287,6 +324,105 @@ def create_my_address(
     return build_success_response(_serialize_address(record))
 
 
+@router.get("/me/departments", response_model=ApiResponse)
+def list_department_options(
+    context: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db_session),
+) -> ApiResponse:
+    values = db.scalars(
+        select(SysUser.department_name)
+        .where(SysUser.department_name.is_not(None), SysUser.department_name != "")
+        .distinct()
+        .order_by(SysUser.department_name.asc())
+    ).all()
+    options = [str(item) for item in values if item]
+
+    fallback_department = context.user.department_name
+    if not fallback_department:
+        fallback_department = db.scalar(
+            select(Department.name).where(Department.id == context.user.department_id)
+        )
+    if fallback_department and fallback_department not in options:
+        options.append(fallback_department)
+        options.sort()
+
+    return build_success_response(options)
+
+
+@router.get("/me/applications", response_model=ApiResponse)
+def list_my_applications(
+    status: ApplicationStatus | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=50),
+    context: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db_session),
+) -> ApiResponse:
+    stmt = select(Application).where(Application.applicant_user_id == context.user.id)
+    if status is not None:
+        stmt = stmt.where(Application.status == status)
+
+    total = int(db.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
+    rows = db.scalars(
+        stmt.order_by(Application.created_at.desc(), Application.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+
+    application_ids = [int(item.id) for item in rows]
+    item_rows = (
+        db.execute(
+            select(ApplicationItem, Sku)
+            .join(Sku, Sku.id == ApplicationItem.sku_id)
+            .where(ApplicationItem.application_id.in_(application_ids))
+            .order_by(ApplicationItem.application_id.asc(), ApplicationItem.id.asc())
+        ).all()
+        if application_ids
+        else []
+    )
+
+    item_map: dict[int, list[dict[str, object]]] = {key: [] for key in application_ids}
+    title_map: dict[int, list[str]] = {key: [] for key in application_ids}
+    for item, sku in item_rows:
+        item_map.setdefault(int(item.application_id), []).append(
+            {
+                "sku_id": int(item.sku_id),
+                "brand": sku.brand,
+                "model": sku.model,
+                "spec": sku.spec,
+                "cover_url": sku.cover_url,
+                "quantity": int(item.quantity),
+            }
+        )
+        title_map.setdefault(int(item.application_id), []).append(sku.model or sku.brand)
+
+    payload = []
+    for application in rows:
+        app_id = int(application.id)
+        title = application.title or _build_application_title(title_map.get(app_id, []))
+        payload.append(
+            {
+                "id": app_id,
+                "title": title,
+                "status": application.status.value,
+                "delivery_type": application.delivery_type.value,
+                "pickup_code": application.pickup_code,
+                "created_at": _to_iso8601(application.created_at),
+                "items_summary": item_map.get(app_id, []),
+            }
+        )
+
+    return build_success_response(
+        {
+            "items": payload,
+            "meta": {
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+            },
+        }
+    )
+
+
 @router.post("/applications", response_model=ApiResponse)
 def create_application(
     payload: ApplicationCreateRequest,
@@ -311,6 +447,29 @@ def create_application(
         elif payload.express_address is not None:
             resolved_address = payload.express_address.model_dump()
 
+    applicant_department_name = (
+        payload.applicant_department_name.strip()
+        if payload.applicant_department_name and payload.applicant_department_name.strip()
+        else None
+    )
+    if not applicant_department_name:
+        applicant_department_name = context.user.department_name
+    if not applicant_department_name:
+        applicant_department_name = db.scalar(
+            select(Department.name).where(Department.id == context.user.department_id)
+        )
+
+    applicant_phone = (
+        payload.applicant_phone.strip()
+        if payload.applicant_phone and payload.applicant_phone.strip()
+        else context.user.mobile_phone
+    )
+    applicant_job_title = (
+        payload.applicant_job_title.strip()
+        if payload.applicant_job_title and payload.applicant_job_title.strip()
+        else context.user.job_title
+    )
+
     now = datetime.now(UTC).replace(tzinfo=None)
     application = Application(
         id=_next_bigint_id(db, Application),
@@ -320,12 +479,19 @@ def create_application(
         delivery_type=payload.delivery_type,
         pickup_code=_create_pickup_code(db),
         pickup_qr_string=None,
+        title=None,
+        applicant_name_snapshot=context.user.name,
+        applicant_department_snapshot=applicant_department_name,
+        applicant_phone_snapshot=applicant_phone,
+        applicant_job_title_snapshot=applicant_job_title,
+        express_address_snapshot=_sanitize_express_address_snapshot(resolved_address),
     )
     db.add(application)
     db.flush()
 
     item_rows: list[ApplicationItem] = []
     relation_rows: list[ApplicationAsset] = []
+    title_labels: list[str] = []
     next_application_asset_id = _next_bigint_id(db, ApplicationAsset)
     next_stock_flow_id = _next_bigint_id(db, StockFlow)
 
@@ -333,6 +499,8 @@ def create_application(
         sku = db.get(Sku, item.sku_id)
         if sku is None:
             raise AppException(code="SKU_NOT_FOUND", message="物料不存在。")
+
+        title_labels.append((sku.model or sku.brand).strip())
 
         item_record = ApplicationItem(
             id=_next_bigint_id(db, ApplicationItem),
@@ -402,6 +570,7 @@ def create_application(
             )
             next_stock_flow_id += 1
 
+    application.title = _build_application_title(title_labels)
     application.status = ApplicationStatus.LOCKED
     db.commit()
     db.refresh(application)

@@ -53,6 +53,20 @@ def _next_bigint_id(db: Session, model: type[object]) -> int:
     return int(value or 0) + 1
 
 
+def _build_application_title(labels: list[str]) -> str:
+    names: list[str] = []
+    for raw in labels:
+        value = raw.strip()
+        if not value or value in names:
+            continue
+        names.append(value)
+    if not names:
+        return "关于物料的申请"
+    if len(names) <= 2:
+        return f"关于{'、'.join(names)}的申请"
+    return f"关于{'、'.join(names[:2])}等{len(names)}项的申请"
+
+
 def _require_any_role(context: AuthContext, allowed_roles: set[str]) -> None:
     if context.roles.intersection(allowed_roles):
         return
@@ -198,39 +212,57 @@ def get_approval_inbox(
     rows = db.execute(base_stmt.offset(offset).limit(page_size)).all()
 
     application_ids = [application.id for application, _ in rows]
-    items_by_application: dict[int, list[ApplicationItem]] = {
+    items_by_application: dict[int, list[dict[str, object]]] = {
+        key: [] for key in application_ids
+    }
+    title_labels_by_application: dict[int, list[str]] = {
         key: [] for key in application_ids
     }
     if application_ids:
-        item_rows = db.scalars(
-            select(ApplicationItem)
+        item_rows = db.execute(
+            select(ApplicationItem, Sku)
+            .join(Sku, Sku.id == ApplicationItem.sku_id)
             .where(ApplicationItem.application_id.in_(application_ids))
             .order_by(ApplicationItem.id.asc())
         ).all()
-        for item in item_rows:
-            items_by_application.setdefault(item.application_id, []).append(item)
+        for item, sku in item_rows:
+            items_by_application.setdefault(int(item.application_id), []).append(
+                {
+                    "sku_id": int(item.sku_id),
+                    "quantity": int(item.quantity),
+                    "brand": sku.brand,
+                    "model": sku.model,
+                    "spec": sku.spec,
+                    "cover_url": sku.cover_url,
+                }
+            )
+            title_labels_by_application.setdefault(int(item.application_id), []).append(
+                sku.model or sku.brand
+            )
 
     data = []
     for application, applicant in rows:
-        items = items_by_application.get(application.id, [])
+        items = items_by_application.get(int(application.id), [])
+        title = application.title or _build_application_title(
+            title_labels_by_application.get(int(application.id), [])
+        )
         data.append(
             {
                 "application_id": application.id,
+                "title": title,
                 "applicant": {
                     "id": applicant.id,
                     "name": applicant.name,
                     "department_id": applicant.department_id,
+                    "department_name": (
+                        application.applicant_department_snapshot
+                        or applicant.department_name
+                    ),
                 },
                 "delivery_type": application.delivery_type.value,
                 "status": application.status.value,
                 "created_at": _to_iso8601(application.created_at),
-                "items_summary": [
-                    {
-                        "sku_id": item.sku_id,
-                        "quantity": item.quantity,
-                    }
-                    for item in items
-                ],
+                "items_summary": items,
                 "ai_suggestion": None,
             }
         )
@@ -261,11 +293,14 @@ def get_application_detail(
     if not is_privileged and application.applicant_user_id != context.user.id:
         raise AppException(code="PERMISSION_DENIED", message="权限不足。")
 
-    items = db.scalars(
-        select(ApplicationItem)
+    applicant = db.get(SysUser, application.applicant_user_id)
+    item_rows = db.execute(
+        select(ApplicationItem, Sku)
+        .join(Sku, Sku.id == ApplicationItem.sku_id)
         .where(ApplicationItem.application_id == application.id)
         .order_by(ApplicationItem.id.asc())
     ).all()
+    items = [row[0] for row in item_rows]
     approval_history = db.scalars(
         select(ApprovalHistory)
         .where(ApprovalHistory.application_id == application.id)
@@ -285,10 +320,14 @@ def get_application_detail(
         .all()
     )
 
+    title_labels = [sku.model or sku.brand for _, sku in item_rows]
+    resolved_title = application.title or _build_application_title(title_labels)
+
     return build_success_response(
         {
             "application": {
                 "id": application.id,
+                "title": resolved_title,
                 "applicant_user_id": application.applicant_user_id,
                 "type": application.type.value,
                 "status": application.status.value,
@@ -298,14 +337,28 @@ def get_application_detail(
                 "created_at": _to_iso8601(application.created_at),
                 "leader_approver_user_id": application.leader_approver_user_id,
                 "admin_reviewer_user_id": application.admin_reviewer_user_id,
+                "applicant_snapshot": {
+                    "name": application.applicant_name_snapshot or (applicant.name if applicant else None),
+                    "department_name": application.applicant_department_snapshot
+                    or (applicant.department_name if applicant else None),
+                    "phone": application.applicant_phone_snapshot
+                    or (applicant.mobile_phone if applicant else None),
+                    "job_title": application.applicant_job_title_snapshot
+                    or (applicant.job_title if applicant else None),
+                },
+                "express_address_snapshot": application.express_address_snapshot,
                 "items": [
                     {
                         "id": item.id,
                         "sku_id": item.sku_id,
                         "quantity": item.quantity,
                         "note": item.note,
+                        "brand": sku.brand,
+                        "model": sku.model,
+                        "spec": sku.spec,
+                        "cover_url": sku.cover_url,
                     }
-                    for item in items
+                    for item, sku in item_rows
                 ],
             },
             "approval_history": [

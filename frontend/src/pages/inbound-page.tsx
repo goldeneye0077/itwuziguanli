@@ -8,6 +8,7 @@ import {
   type InboundOcrDocType,
   type SkuStockMode,
 } from "../api";
+import { hasActionPermission, PERMISSION_KEYS } from "../permissions";
 import { useAuthSession } from "../stores";
 import {
   parsePositiveInteger,
@@ -29,8 +30,16 @@ function stringifyJson(payload: unknown): string {
 }
 
 export function InboundPage(): JSX.Element {
-  const { state } = useAuthSession();
+  const { state, hasPermission, userRoles, userPermissions } = useAuthSession();
   const accessToken = state.accessToken;
+  const canReadInventory = hasPermission(PERMISSION_KEYS.inventoryRead);
+  const canWriteInventory = hasPermission(PERMISSION_KEYS.inventoryWrite);
+  const canConfirmInbound = hasActionPermission(
+    "inbound.confirm-inbound",
+    userRoles,
+    userPermissions,
+  );
+  const canPrintTag = hasActionPermission("inbound.print-tag", userRoles, userPermissions);
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -68,6 +77,10 @@ export function InboundPage(): JSX.Element {
   const token = accessToken;
 
   async function handleCreateOcrJob(): Promise<void> {
+    if (!canWriteInventory) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法创建识别任务。");
+      return;
+    }
     if (!ocrFile) {
       setErrorMessage("请先选择文件再创建单据识别任务。");
       return;
@@ -91,6 +104,10 @@ export function InboundPage(): JSX.Element {
   }
 
   async function handleFetchOcrJob(): Promise<void> {
+    if (!canReadInventory) {
+      setErrorMessage("当前账号缺少 INVENTORY:READ 权限，无法查询识别任务。");
+      return;
+    }
     const parsedJobId = parsePositiveInteger(ocrLookupJobId);
     if (!parsedJobId) {
       setErrorMessage("单据识别任务编号必须为正整数。");
@@ -113,6 +130,10 @@ export function InboundPage(): JSX.Element {
   }
 
   async function handleConfirmOcrJob(): Promise<void> {
+    if (!canConfirmInbound) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法确认识别入库。");
+      return;
+    }
     const parsedJobId = parsePositiveInteger(confirmJobId);
     const parsedCategoryId = parsePositiveInteger(confirmCategoryId);
     const parsedSafetyStockThreshold = Number(confirmSafetyStockThreshold);
@@ -209,6 +230,9 @@ export function InboundPage(): JSX.Element {
       <section className="app-shell__grid inbound-grid" aria-label="入库操作面板">
         <InboundManualImportCard
           accessToken={token}
+          canReadInventory={canReadInventory}
+          canConfirmInbound={canConfirmInbound}
+          canPrintTag={canPrintTag}
           onError={(message) => {
             setErrorMessage(message);
             setSuccessMessage(null);
@@ -259,7 +283,7 @@ export function InboundPage(): JSX.Element {
             <button
               className="auth-submit"
               type="button"
-              disabled={isCreatingOcrJob}
+              disabled={isCreatingOcrJob || !canWriteInventory}
               onClick={() => {
                 void handleCreateOcrJob();
               }}
@@ -279,7 +303,7 @@ export function InboundPage(): JSX.Element {
             <button
               className="app-shell__header-action"
               type="button"
-              disabled={isLoadingOcrJob}
+              disabled={isLoadingOcrJob || !canReadInventory}
               onClick={() => {
                 void handleFetchOcrJob();
               }}
@@ -377,7 +401,7 @@ export function InboundPage(): JSX.Element {
             <button
               className="auth-submit"
               type="button"
-              disabled={isConfirmingOcrJob}
+              disabled={isConfirmingOcrJob || !canConfirmInbound}
               onClick={() => {
                 void handleConfirmOcrJob();
               }}

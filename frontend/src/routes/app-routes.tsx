@@ -29,6 +29,10 @@ import {
   Wrench,
   type LucideIcon,
 } from "lucide-react";
+import {
+  hasRoutePermission as hasRoutePermissionByRoles,
+  resolveRoutePermissions,
+} from "../permissions";
 
 import {
   AdminCrudPage,
@@ -133,6 +137,10 @@ function getRequiredRoles(meta: BlueprintRouteMeta): AppRole[] {
   return meta.roles.filter((role) => role !== "PUBLIC");
 }
 
+function getRequiredPermissions(meta: BlueprintRouteMeta): readonly string[] {
+  return resolveRoutePermissions(meta.route);
+}
+
 function hasAnyRequiredRole(
   currentRoles: readonly AppRole[],
   requiredRoles: readonly AppRole[],
@@ -172,6 +180,18 @@ function toRoleListLabel(roles: readonly AppRole[]): string {
 
 function pathIsWithin(basePath: string, pathname: string): boolean {
   return pathname === basePath || pathname.startsWith(`${basePath}/`);
+}
+
+function hasRouteAccess(
+  meta: BlueprintRouteMeta,
+  currentRoles: readonly AppRole[],
+  currentPermissions: readonly string[],
+): boolean {
+  const requiredRoles = getRequiredRoles(meta);
+  if (!hasAnyRequiredRole(currentRoles, requiredRoles)) {
+    return false;
+  }
+  return hasRoutePermissionByRoles(meta.route, currentRoles, currentPermissions);
 }
 
 function isNavItemActive(routePath: string, pathname: string): boolean {
@@ -285,7 +305,15 @@ function AuthInvalidationListener(): null {
 function AppShellLayout({ children }: { readonly children: ReactNode }): JSX.Element {
   const location = useLocation();
   const navigate = useNavigate();
-  const { state, userRoles, logout } = useAuthSession();
+  const { state, userRoles, userPermissions, logout } = useAuthSession();
+
+  const visibleNavItems = useMemo(
+    () =>
+      NAV_ROUTE_META.filter((item) =>
+        hasRouteAccess(item, userRoles, userPermissions),
+      ),
+    [userPermissions, userRoles],
+  );
 
   async function handleLogout(): Promise<void> {
     await logout();
@@ -319,7 +347,7 @@ function AppShellLayout({ children }: { readonly children: ReactNode }): JSX.Ele
         <aside className="app-shell__nav" aria-label="主导航">
           <p className="app-shell__section-label">导航</p>
           <ul className="app-shell__nav-list">
-            {NAV_ROUTE_META.map((item) => {
+            {visibleNavItems.map((item) => {
               const isActive = isNavItemActive(item.route, location.pathname);
               const Icon = ROUTE_ICONS[item.route];
               return (
@@ -447,8 +475,9 @@ function resolveProtectedPage(
 
 function ProtectedRoute({ meta }: { readonly meta: BlueprintRouteMeta }): JSX.Element {
   const location = useLocation();
-  const { state, isAuthenticated, userRoles } = useAuthSession();
+  const { state, isAuthenticated, userRoles, userPermissions } = useAuthSession();
   const requiredRoles = getRequiredRoles(meta);
+  const requiredPermissions = getRequiredPermissions(meta);
 
   if (!state.initialized) {
     return <SessionBootState />;
@@ -471,6 +500,20 @@ function ProtectedRoute({ meta }: { readonly meta: BlueprintRouteMeta }): JSX.El
           routePath={meta.route}
           currentRoles={userRoles}
           requiredRoles={requiredRoles}
+        />
+      </AppShellLayout>
+    );
+  }
+
+  if (!hasRoutePermissionByRoles(meta.route, userRoles, userPermissions)) {
+    return (
+      <AppShellLayout>
+        <ForbiddenRouteState
+          routePath={meta.route}
+          currentRoles={userRoles}
+          requiredRoles={requiredRoles}
+          currentPermissions={userPermissions}
+          requiredPermissions={requiredPermissions}
         />
       </AppShellLayout>
     );

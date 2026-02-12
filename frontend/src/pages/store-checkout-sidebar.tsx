@@ -1,14 +1,52 @@
-import { useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 
 import {
   AuthApiError,
   createApplication,
+  createMyAddress,
+  fetchMyAddresses,
+  fetchMyDepartments,
   requestAiPrecheck,
   type AiPrecheckResult,
+  type CreateAddressInput,
+  type UserAddressItem,
 } from "../api";
+import { useAuthSession } from "../stores";
 import { toAiRecommendationLabel } from "./page-helpers";
 import type { CartEntry } from "./m02-cart";
-import { readSubmittedApplications, saveSubmittedApplications } from "./m02-storage";
+
+interface ManualAddressForm {
+  readonly receiverName: string;
+  readonly receiverPhone: string;
+  readonly province: string;
+  readonly city: string;
+  readonly district: string;
+  readonly detail: string;
+}
+
+const EMPTY_MANUAL_ADDRESS: ManualAddressForm = {
+  receiverName: "",
+  receiverPhone: "",
+  province: "",
+  city: "",
+  district: "",
+  detail: "",
+};
+
+function toAddressLabel(address: UserAddressItem): string {
+  return `${address.receiverName} ${address.receiverPhone} - ${address.province}${address.city}${address.district}${address.detail}`;
+}
+
+function hasManualAddressValue(address: ManualAddressForm): boolean {
+  return Boolean(
+    address.receiverName.trim() &&
+      address.receiverPhone.trim() &&
+      address.province.trim() &&
+      address.city.trim() &&
+      address.district.trim() &&
+      address.detail.trim(),
+  );
+}
 
 function IconCart(): JSX.Element {
   return (
@@ -32,12 +70,12 @@ function IconDelivery(): JSX.Element {
   );
 }
 
-function IconRole(): JSX.Element {
+function IconDepartment(): JSX.Element {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path
         fill="currentColor"
-        d="M12 12a4.5 4.5 0 1 0-4.5-4.5A4.51 4.51 0 0 0 12 12Zm0 2c-4.2 0-8 2.16-8 5v1a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-1c0-2.84-3.8-5-8-5Z"
+        d="M4 4.5A1.5 1.5 0 0 1 5.5 3h13A1.5 1.5 0 0 1 20 4.5v15a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19.5v-15Zm3 2a1 1 0 0 0 0 2h10a1 1 0 1 0 0-2H7Zm0 4a1 1 0 0 0 0 2h10a1 1 0 1 0 0-2H7Zm0 4a1 1 0 0 0 0 2h6a1 1 0 1 0 0-2H7Z"
       />
     </svg>
   );
@@ -62,28 +100,83 @@ export function StoreCheckoutSidebar(props: {
   readonly clearCart: () => void;
 }): JSX.Element {
   const { accessToken, cartItems, cartTotalQuantity, setCartQuantity, clearCart } = props;
+  const { state } = useAuthSession();
 
-  const cartIsEmpty = cartItems.length === 0;
   const [deliveryType, setDeliveryType] = useState<"PICKUP" | "EXPRESS">("PICKUP");
-  const [applicantJobTitle, setApplicantJobTitle] = useState("");
+  const [departments, setDepartments] = useState<string[]>([]);
+  const [selectedDepartment, setSelectedDepartment] = useState("");
+  const [addresses, setAddresses] = useState<UserAddressItem[]>([]);
+  const [useSavedAddress, setUseSavedAddress] = useState(true);
+  const [selectedAddressId, setSelectedAddressId] = useState<number | undefined>();
+  const [manualAddress, setManualAddress] = useState<ManualAddressForm>(EMPTY_MANUAL_ADDRESS);
   const [applicantReason, setApplicantReason] = useState("");
+
   const [aiPrecheck, setAiPrecheck] = useState<AiPrecheckResult | null>(null);
+  const [isLoadingBaseData, setIsLoadingBaseData] = useState(false);
   const [isPrechecking, setIsPrechecking] = useState(false);
+  const [isSavingAddress, setIsSavingAddress] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
 
-  const expressNotSupported = deliveryType === "EXPRESS";
+  const cartIsEmpty = cartItems.length === 0;
 
   const canRunActions = useMemo(
     () => Boolean(accessToken) && !cartIsEmpty && !isSubmitting,
     [accessToken, cartIsEmpty, isSubmitting],
   );
 
-  const canSubmit = useMemo(
-    () => canRunActions && !expressNotSupported,
-    [canRunActions, expressNotSupported],
-  );
+  const canSubmitExpressWithSavedAddress =
+    deliveryType !== "EXPRESS" || !useSavedAddress || Boolean(selectedAddressId);
+  const canSubmitExpressWithManualAddress =
+    deliveryType !== "EXPRESS" || useSavedAddress || hasManualAddressValue(manualAddress);
+  const canSubmit = canRunActions && canSubmitExpressWithSavedAddress && canSubmitExpressWithManualAddress;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadBaseData(): Promise<void> {
+      if (!accessToken) {
+        return;
+      }
+
+      setIsLoadingBaseData(true);
+      try {
+        const [addressResult, departmentResult] = await Promise.all([
+          fetchMyAddresses(accessToken),
+          fetchMyDepartments(accessToken),
+        ]);
+        if (cancelled) {
+          return;
+        }
+
+        setAddresses(addressResult);
+        const defaultAddress = addressResult.find((item) => item.isDefault);
+        setSelectedAddressId(defaultAddress?.id);
+
+        setDepartments(departmentResult);
+        const defaultDepartment =
+          state.user?.departmentName && departmentResult.includes(state.user.departmentName)
+            ? state.user.departmentName
+            : departmentResult[0] ?? state.user?.departmentName ?? "";
+        setSelectedDepartment(defaultDepartment);
+      } catch (error) {
+        if (!cancelled) {
+          setErrorMessage(error instanceof AuthApiError ? error.message : "加载基础数据失败。");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingBaseData(false);
+        }
+      }
+    }
+
+    void loadBaseData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, state.user?.departmentName]);
 
   async function runPrecheck(): Promise<void> {
     if (!accessToken || cartItems.length === 0) {
@@ -94,7 +187,7 @@ export function StoreCheckoutSidebar(props: {
     setErrorMessage(null);
     try {
       const result = await requestAiPrecheck(accessToken, {
-        jobTitle: applicantJobTitle.trim() || "未知岗位",
+        jobTitle: state.user?.jobTitle ?? "未填写职务",
         reason: applicantReason.trim() || "未填写申请原因",
         items: cartItems.map((item) => ({
           skuId: item.sku.id,
@@ -109,13 +202,50 @@ export function StoreCheckoutSidebar(props: {
     }
   }
 
+  async function saveManualAddress(): Promise<void> {
+    if (!accessToken) {
+      return;
+    }
+    if (!hasManualAddressValue(manualAddress)) {
+      setErrorMessage("请先完整填写地址信息后再保存。");
+      return;
+    }
+
+    const input: CreateAddressInput = {
+      receiverName: manualAddress.receiverName.trim(),
+      receiverPhone: manualAddress.receiverPhone.trim(),
+      province: manualAddress.province.trim(),
+      city: manualAddress.city.trim(),
+      district: manualAddress.district.trim(),
+      detail: manualAddress.detail.trim(),
+      isDefault: false,
+    };
+
+    setIsSavingAddress(true);
+    setErrorMessage(null);
+    try {
+      const created = await createMyAddress(accessToken, input);
+      setAddresses((current) => [created, ...current]);
+      setSelectedAddressId(created.id);
+      setUseSavedAddress(true);
+    } catch (error) {
+      setErrorMessage(error instanceof AuthApiError ? error.message : "保存地址失败。");
+    } finally {
+      setIsSavingAddress(false);
+    }
+  }
+
   async function submitApplication(): Promise<void> {
     if (!accessToken || cartItems.length === 0) {
       return;
     }
 
-    if (expressNotSupported) {
-      setErrorMessage("快递申请请前往“领用购物车”页面填写地址后提交。");
+    if (!canSubmitExpressWithSavedAddress) {
+      setErrorMessage("请选择已保存地址后再提交。");
+      return;
+    }
+    if (!canSubmitExpressWithManualAddress) {
+      setErrorMessage("请先完整填写快递地址后再提交。");
       return;
     }
 
@@ -125,16 +255,29 @@ export function StoreCheckoutSidebar(props: {
     try {
       const result = await createApplication(accessToken, {
         type: "APPLY",
-        deliveryType: "PICKUP",
+        deliveryType,
         items: cartItems.map((item) => ({
           skuId: item.sku.id,
           quantity: item.quantity,
         })),
+        expressAddressId:
+          deliveryType === "EXPRESS" && useSavedAddress ? selectedAddressId : undefined,
+        expressAddress:
+          deliveryType === "EXPRESS" && !useSavedAddress
+            ? {
+                receiverName: manualAddress.receiverName.trim(),
+                receiverPhone: manualAddress.receiverPhone.trim(),
+                province: manualAddress.province.trim(),
+                city: manualAddress.city.trim(),
+                district: manualAddress.district.trim(),
+                detail: manualAddress.detail.trim(),
+              }
+            : undefined,
         applicantReason: applicantReason.trim() || undefined,
-        applicantJobTitle: applicantJobTitle.trim() || undefined,
+        applicantDepartmentName: selectedDepartment || undefined,
+        applicantPhone: state.user?.mobilePhone ?? undefined,
+        applicantJobTitle: state.user?.jobTitle ?? undefined,
       });
-
-      saveSubmittedApplications([result, ...readSubmittedApplications()]);
       setSubmitMessage(`申请单 #${result.id} 提交成功，取件码：${result.pickupCode}`);
       clearCart();
       setAiPrecheck(null);
@@ -151,10 +294,7 @@ export function StoreCheckoutSidebar(props: {
         <p className="app-shell__section-label">结算区</p>
         <div className="store-checkout__title-row">
           <h3 className="store-checkout__title">
-            购物车{" "}
-            <span className="store-checkout__count" aria-label={`购物车数量 ${cartTotalQuantity}`}>
-              ({cartTotalQuantity})
-            </span>
+            购物车 <span className="store-checkout__count">({cartTotalQuantity})</span>
           </h3>
           <button
             className="app-shell__header-action store-checkout__clear"
@@ -206,7 +346,6 @@ export function StoreCheckoutSidebar(props: {
                   <button
                     className="app-shell__header-action store-checkout__qty-btn"
                     type="button"
-                    aria-label={`减少 ${entry.sku.brand} ${entry.sku.model} 的数量`}
                     onClick={() => setCartQuantity(entry.sku.id, entry.quantity - 1)}
                   >
                     -
@@ -215,7 +354,6 @@ export function StoreCheckoutSidebar(props: {
                   <button
                     className="app-shell__header-action store-checkout__qty-btn"
                     type="button"
-                    aria-label={`增加 ${entry.sku.brand} ${entry.sku.model} 的数量`}
                     disabled={entry.quantity >= entry.sku.availableStock}
                     onClick={() => setCartQuantity(entry.sku.id, entry.quantity + 1)}
                   >
@@ -242,22 +380,29 @@ export function StoreCheckoutSidebar(props: {
                 }}
               >
                 <option value="PICKUP">自提</option>
-                <option value="EXPRESS">快递（需地址）</option>
+                <option value="EXPRESS">快递</option>
               </select>
             </label>
 
             <label className="store-checkout__field">
               <span className="store-checkout__field-label">
                 <span className="store-checkout__field-icon" aria-hidden="true">
-                  <IconRole />
+                  <IconDepartment />
                 </span>
-                岗位
+                部门
               </span>
-              <input
-                value={applicantJobTitle}
-                onChange={(event) => setApplicantJobTitle(event.target.value)}
-                placeholder="例如：前端工程师"
-              />
+              <select
+                value={selectedDepartment}
+                onChange={(event) => setSelectedDepartment(event.target.value)}
+                disabled={isLoadingBaseData}
+              >
+                <option value="">请选择部门</option>
+                {departments.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
             </label>
 
             <label className="store-checkout__field">
@@ -274,13 +419,114 @@ export function StoreCheckoutSidebar(props: {
                 rows={3}
               />
             </label>
-          </form>
 
-          {expressNotSupported ? (
-            <p className="store-precheck-result" role="note">
-              快递申请请前往“领用购物车”页面填写地址后提交。
-            </p>
-          ) : null}
+            {deliveryType === "EXPRESS" ? (
+              <div className="store-checkout__express-block">
+                <div className="store-checkout__express-toggle page-actions">
+                  <button
+                    className="app-shell__header-action"
+                    type="button"
+                    onClick={() => setUseSavedAddress(true)}
+                  >
+                    使用已保存地址
+                  </button>
+                  <button
+                    className="app-shell__header-action"
+                    type="button"
+                    onClick={() => setUseSavedAddress(false)}
+                  >
+                    填写新地址
+                  </button>
+                </div>
+
+                {useSavedAddress ? (
+                  <label className="store-checkout__field">
+                    <span className="store-checkout__field-label">快递地址</span>
+                    <select
+                      value={selectedAddressId ?? ""}
+                      onChange={(event) =>
+                        setSelectedAddressId(event.target.value ? Number(event.target.value) : undefined)
+                      }
+                    >
+                      <option value="">请选择地址</option>
+                      {addresses.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {toAddressLabel(item)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <div className="store-checkout__address-grid">
+                    <label className="store-checkout__field">
+                      <span className="store-checkout__field-label">收件人</span>
+                      <input
+                        value={manualAddress.receiverName}
+                        onChange={(event) =>
+                          setManualAddress((current) => ({ ...current, receiverName: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label className="store-checkout__field">
+                      <span className="store-checkout__field-label">联系电话</span>
+                      <input
+                        value={manualAddress.receiverPhone}
+                        onChange={(event) =>
+                          setManualAddress((current) => ({ ...current, receiverPhone: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label className="store-checkout__field">
+                      <span className="store-checkout__field-label">省份</span>
+                      <input
+                        value={manualAddress.province}
+                        onChange={(event) =>
+                          setManualAddress((current) => ({ ...current, province: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label className="store-checkout__field">
+                      <span className="store-checkout__field-label">城市</span>
+                      <input
+                        value={manualAddress.city}
+                        onChange={(event) =>
+                          setManualAddress((current) => ({ ...current, city: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label className="store-checkout__field">
+                      <span className="store-checkout__field-label">区县</span>
+                      <input
+                        value={manualAddress.district}
+                        onChange={(event) =>
+                          setManualAddress((current) => ({ ...current, district: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label className="store-checkout__field">
+                      <span className="store-checkout__field-label">详细地址</span>
+                      <input
+                        value={manualAddress.detail}
+                        onChange={(event) =>
+                          setManualAddress((current) => ({ ...current, detail: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <button
+                      className="app-shell__header-action"
+                      type="button"
+                      disabled={isSavingAddress}
+                      onClick={() => {
+                        void saveManualAddress();
+                      }}
+                    >
+                      {isSavingAddress ? "保存中..." : "保存地址"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </form>
 
           {aiPrecheck ? (
             <p className="store-precheck-result" aria-live="polite">
@@ -293,7 +539,9 @@ export function StoreCheckoutSidebar(props: {
               className="app-shell__header-action store-checkout__secondary"
               type="button"
               disabled={!canRunActions || isPrechecking}
-              onClick={() => void runPrecheck()}
+              onClick={() => {
+                void runPrecheck();
+              }}
             >
               {isPrechecking ? "预检中..." : "智能预检"}
             </button>
@@ -301,7 +549,9 @@ export function StoreCheckoutSidebar(props: {
               className="auth-submit store-checkout__primary"
               type="button"
               disabled={!canSubmit}
-              onClick={() => void submitApplication()}
+              onClick={() => {
+                void submitApplication();
+              }}
             >
               {isSubmitting ? "提交中..." : "提交申请"}
             </button>

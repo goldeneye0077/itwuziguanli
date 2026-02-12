@@ -15,6 +15,8 @@ AdminCrudResource = Literal[
     "announcements",
 ]
 
+UiGuardType = Literal["ROUTE", "ACTION"]
+
 
 class RbacRoleCreateRequest(BaseModel):
     key: str = Field(min_length=1, max_length=64)
@@ -34,3 +36,13 @@ class RbacRoleBindingsRequest(BaseModel):
 
 class AdminUserRolesUpdateRequest(BaseModel):
     roles: list[str]
+
+
+class RbacUiGuardItemRequest(BaseModel):
+    key: str = Field(min_length=1, max_length=128)
+    required_permissions: list[str] = Field(default_factory=list)
+
+
+class RbacUiGuardsReplaceRequest(BaseModel):
+    routes: list[RbacUiGuardItemRequest] = Field(default_factory=list)
+    actions: list[RbacUiGuardItemRequest] = Field(default_factory=list)

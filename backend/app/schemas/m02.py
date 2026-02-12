@@ -39,6 +39,8 @@ class ApplicationCreateRequest(BaseModel):
     express_address_id: int | None = Field(default=None, ge=1)
     express_address: ExpressAddressRequest | None = None
     applicant_reason: str | None = Field(default=None, max_length=1000)
+    applicant_department_name: str | None = Field(default=None, max_length=64)
+    applicant_phone: str | None = Field(default=None, max_length=32)
     applicant_job_title: str | None = Field(default=None, max_length=128)
 
     @model_validator(mode="after")

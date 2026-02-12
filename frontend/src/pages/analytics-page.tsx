@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 
 import {
   fetchApplicationsTrendReport,
@@ -11,6 +11,7 @@ import {
   type CostByDepartmentRow,
   type ReportGranularity,
 } from "../api";
+import { hasActionPermission } from "../permissions";
 import { useAuthSession } from "../stores";
 import { parsePositiveInteger, toAssetStatusLabel, toErrorMessage } from "./page-helpers";
 
@@ -88,12 +89,26 @@ function toCopilotColumnLabel(column: string): string {
   return mapping[normalized] ?? column;
 }
 
+function toCsv(rows: ReadonlyArray<ReadonlyArray<string | number>>): string {
+  return rows
+    .map((columns) =>
+      columns
+        .map((value) => {
+          const raw = String(value ?? "");
+          const escaped = raw.replace(/"/g, '""');
+          return /[",\n]/.test(escaped) ? `"${escaped}"` : escaped;
+        })
+        .join(","),
+    )
+    .join("\n");
+}
+
 interface AnalyticsPageProps {
   readonly routePath: AnalyticsRoute;
 }
 
 export function AnalyticsPage({ routePath }: AnalyticsPageProps): JSX.Element {
-  const { state } = useAuthSession();
+  const { state, userRoles, userPermissions } = useAuthSession();
   const accessToken = state.accessToken;
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -113,6 +128,21 @@ export function AnalyticsPage({ routePath }: AnalyticsPageProps): JSX.Element {
   const [copilotLimit, setCopilotLimit] = useState("20");
   const [copilotResult, setCopilotResult] = useState<CopilotQueryResult | null>(null);
   const [isRunningCopilot, setIsRunningCopilot] = useState(false);
+  const canApplyFilter = hasActionPermission(
+    "analytics.apply-filter",
+    userRoles,
+    userPermissions,
+  );
+  const canExportReport = hasActionPermission(
+    "analytics.export-report",
+    userRoles,
+    userPermissions,
+  );
+  const canRunCopilot = hasActionPermission(
+    "analytics.run-copilot",
+    userRoles,
+    userPermissions,
+  );
 
   if (!accessToken) {
     return (
@@ -127,6 +157,10 @@ export function AnalyticsPage({ routePath }: AnalyticsPageProps): JSX.Element {
   const isAnalyticsRoute = routePath === "/analytics";
 
   async function handleLoadReports(): Promise<void> {
+    if (!canApplyFilter) {
+      setErrorMessage("当前账号缺少分析报表筛选权限。");
+      return;
+    }
     setIsLoadingReports(true);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -160,6 +194,10 @@ export function AnalyticsPage({ routePath }: AnalyticsPageProps): JSX.Element {
   }
 
   async function handleRunCopilot(): Promise<void> {
+    if (!canRunCopilot) {
+      setErrorMessage("当前账号缺少智能问答执行权限。");
+      return;
+    }
     const normalizedQuestion = copilotQuestion.trim();
     if (!normalizedQuestion) {
       setErrorMessage("智能问答提问内容不能为空。");
@@ -200,6 +238,45 @@ export function AnalyticsPage({ routePath }: AnalyticsPageProps): JSX.Element {
     } finally {
       setIsRunningCopilot(false);
     }
+  }
+
+  function handleExportReports(): void {
+    if (!canExportReport) {
+      setErrorMessage("当前账号缺少报表导出权限。");
+      return;
+    }
+    if (!trendRows.length && !costRows.length && !statusRows.length) {
+      setErrorMessage("当前无可导出的报表数据，请先加载报表。");
+      return;
+    }
+
+    const rows: Array<ReadonlyArray<string | number>> = [];
+    rows.push(["section", "col1", "col2", "col3"]);
+    rows.push(...trendRows.map((item) => ["applications_trend", item.bucket, item.count, ""]));
+    rows.push(
+      ...costRows.map((item) => [
+        "cost_by_department",
+        item.departmentName,
+        item.totalCost,
+        item.applicationCount,
+      ]),
+    );
+    rows.push(
+      ...statusRows.map((item) => ["asset_status_distribution", item.status, item.count, ""]),
+    );
+
+    const blob = new Blob(["\ufeff" + toCsv(rows)], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "analytics-reports.csv";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    setSuccessMessage("报表 CSV 导出成功。");
   }
 
   return (
@@ -275,12 +352,26 @@ export function AnalyticsPage({ routePath }: AnalyticsPageProps): JSX.Element {
               <button
                 className="auth-submit"
                 type="button"
-                disabled={isLoadingReports}
+                disabled={isLoadingReports || !canApplyFilter}
                 onClick={() => {
                   void handleLoadReports();
                 }}
               >
                 {isLoadingReports ? "加载中..." : "加载报表"}
+              </button>
+              <button
+                className="app-shell__header-action"
+                type="button"
+                disabled={
+                  isLoadingReports ||
+                  !canExportReport ||
+                  (!trendRows.length && !costRows.length && !statusRows.length)
+                }
+                onClick={() => {
+                  handleExportReports();
+                }}
+              >
+                导出 CSV
               </button>
             </div>
           </section>
@@ -439,7 +530,7 @@ export function AnalyticsPage({ routePath }: AnalyticsPageProps): JSX.Element {
               <button
                 className="auth-submit"
                 type="button"
-                disabled={isRunningCopilot}
+                disabled={isRunningCopilot || !canRunCopilot}
                 onClick={() => {
                   void handleRunCopilot();
                 }}

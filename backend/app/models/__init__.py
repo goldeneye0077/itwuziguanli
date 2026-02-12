@@ -12,7 +12,13 @@ from app.models.sku_stock import SkuStock, SkuStockFlow
 from app.models.notification import NotificationOutbox, UserAddress
 from app.models.organization import Department, SysUser
 from app.models.portal import Announcement, HeroBanner
-from app.models.rbac import RbacPermission, RbacRole, RbacRolePermission, RbacUserRole
+from app.models.rbac import (
+    RbacPermission,
+    RbacRole,
+    RbacRolePermission,
+    RbacUiGuard,
+    RbacUserRole,
+)
 from app.models.security import AuditLog, TokenBlacklist
 
 __all__ = [
@@ -37,6 +43,7 @@ __all__ = [
     "RbacPermission",
     "RbacRole",
     "RbacRolePermission",
+    "RbacUiGuard",
     "RbacUserRole",
     "AuditLog",
     "TokenBlacklist",

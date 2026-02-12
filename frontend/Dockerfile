@@ -6,7 +6,10 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
-RUN npm install --no-save vite@^5.4.14 && npx vite build
+RUN npm config set registry https://registry.npmmirror.com \
+    && npm config set strict-ssl false \
+    && npm install --no-save vite@^5.4.14 \
+    && npx vite build
 
 FROM nginx:1.24-alpine
 

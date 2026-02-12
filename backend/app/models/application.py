@@ -53,6 +53,20 @@ class Application(TimestampMixin, Base):
     )
     pickup_code: Mapped[str] = mapped_column(String(6), nullable=False)
     pickup_qr_string: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    applicant_name_snapshot: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    applicant_department_snapshot: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    applicant_phone_snapshot: Mapped[str | None] = mapped_column(
+        String(32), nullable=True
+    )
+    applicant_job_title_snapshot: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    express_address_snapshot: Mapped[dict[str, object] | None] = mapped_column(
+        JSON, nullable=True
+    )
     leader_approver_user_id: Mapped[int | None] = mapped_column(
         BigInteger, nullable=True
     )

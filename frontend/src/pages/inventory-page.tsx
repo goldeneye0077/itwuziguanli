@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import {
@@ -25,6 +25,7 @@ import {
   type SkuStockFlowAction,
   type SkuStockFlowItem,
 } from "../api";
+import { hasActionPermission, PERMISSION_KEYS } from "../permissions";
 import { useAuthSession } from "../stores";
 import { parsePositiveInteger, toAssetStatusLabel, toDateLabel, toErrorMessage } from "./page-helpers";
 
@@ -40,8 +41,20 @@ function stringifyJson(payload: unknown): string {
 }
 
 export function InventoryPage(): JSX.Element {
-  const { state } = useAuthSession();
+  const { state, hasPermission, userRoles, userPermissions } = useAuthSession();
   const accessToken = state.accessToken;
+  const canReadInventory = hasPermission(PERMISSION_KEYS.inventoryRead);
+  const canWriteInventory = hasPermission(PERMISSION_KEYS.inventoryWrite);
+  const canFetchSkus = hasActionPermission(
+    "inventory.fetch-skus",
+    userRoles,
+    userPermissions,
+  );
+  const canFetchAssets = hasActionPermission(
+    "inventory.fetch-assets",
+    userRoles,
+    userPermissions,
+  );
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -135,6 +148,10 @@ export function InventoryPage(): JSX.Element {
   const token = accessToken;
 
   async function handleFetchSkus(): Promise<void> {
+    if (!canFetchSkus) {
+      setErrorMessage("当前账号缺少 INVENTORY:READ 权限，无法查询物料。");
+      return;
+    }
     const normalizedSkuId = skuQuerySkuId.trim();
     const parsedSkuId = normalizedSkuId ? parsePositiveInteger(normalizedSkuId) : null;
     if (normalizedSkuId && parsedSkuId === null) {
@@ -170,6 +187,10 @@ export function InventoryPage(): JSX.Element {
   }
 
   async function handleCreateSku(): Promise<void> {
+    if (!canWriteInventory) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法创建物料。");
+      return;
+    }
     const parsedCategoryId = parsePositiveInteger(newSkuCategoryId);
     const parsedThreshold = Number(newSkuSafetyStockThreshold);
     if (!parsedCategoryId) {
@@ -217,6 +238,10 @@ export function InventoryPage(): JSX.Element {
   }
 
   async function handleUploadNewSkuCover(file: File): Promise<void> {
+    if (!canWriteInventory) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法上传封面。");
+      return;
+    }
     setIsUploadingNewSkuCover(true);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -256,6 +281,10 @@ export function InventoryPage(): JSX.Element {
   }
 
   async function handleUploadEditSkuCover(file: File): Promise<void> {
+    if (!canWriteInventory) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法上传封面。");
+      return;
+    }
     setIsUploadingEditSkuCover(true);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -271,6 +300,10 @@ export function InventoryPage(): JSX.Element {
   }
 
   async function handleUpdateSku(): Promise<void> {
+    if (!canWriteInventory) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法更新物料。");
+      return;
+    }
     if (!editingSkuId) {
       setErrorMessage("请先选择要编辑的物料。");
       return;
@@ -317,6 +350,10 @@ export function InventoryPage(): JSX.Element {
   }
 
   async function handleDeleteSku(skuId: number): Promise<void> {
+    if (!canWriteInventory) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法删除物料。");
+      return;
+    }
     const confirmed = window.confirm(
       `确认删除物料 #${skuId}？\n\n注意：已被资产/申请引用的物料不能删除。`,
     );
@@ -343,6 +380,10 @@ export function InventoryPage(): JSX.Element {
   }
 
   async function handleFetchAssets(): Promise<void> {
+    if (!canFetchAssets) {
+      setErrorMessage("当前账号缺少 INVENTORY:READ 权限，无法查询资产。");
+      return;
+    }
     const normalizedFilterSkuId = assetFilterSkuId.trim();
     const parsedFilterSkuId = normalizedFilterSkuId
       ? parsePositiveInteger(normalizedFilterSkuId)
@@ -370,6 +411,10 @@ export function InventoryPage(): JSX.Element {
   }
 
   async function handleCreateAssets(): Promise<void> {
+    if (!canWriteInventory) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法创建资产。");
+      return;
+    }
     const parsedSkuId = parsePositiveInteger(assetCreateSkuId);
     const serialNumbers = parseSerialNumbers(assetCreateSnList);
     if (!parsedSkuId || !serialNumbers.length) {
@@ -410,6 +455,10 @@ export function InventoryPage(): JSX.Element {
   }
 
   async function handleUpdateAsset(): Promise<void> {
+    if (!canWriteInventory) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法更新资产。");
+      return;
+    }
     if (!editingAssetId) {
       setErrorMessage("请先选择要编辑的资产。");
       return;
@@ -453,6 +502,10 @@ export function InventoryPage(): JSX.Element {
   }
 
   async function handleDeleteAsset(assetId: number): Promise<void> {
+    if (!canWriteInventory) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法删除资产。");
+      return;
+    }
     const confirmed = window.confirm(
       `确认删除资产 #${assetId}？\n\n注意：仅允许删除在库且未被锁定/未被流程引用的资产。`,
     );
@@ -479,6 +532,10 @@ export function InventoryPage(): JSX.Element {
   }
 
   async function handleFetchSummary(): Promise<void> {
+    if (!canFetchSkus) {
+      setErrorMessage("当前账号缺少 INVENTORY:READ 权限，无法查询库存汇总。");
+      return;
+    }
     const normalizedSummarySkuId = summaryQuerySkuId.trim();
     const parsedSummarySkuId = normalizedSummarySkuId
       ? parsePositiveInteger(normalizedSummarySkuId)
@@ -517,6 +574,10 @@ export function InventoryPage(): JSX.Element {
   }
 
   async function handleResetSkuFilters(): Promise<void> {
+    if (!canFetchSkus) {
+      setErrorMessage("当前账号缺少 INVENTORY:READ 权限，无法重置并查询物料。");
+      return;
+    }
     setSkuQuerySkuId("");
     setSkuQueryCategoryId("");
     setSkuQueryKeyword("");
@@ -536,6 +597,10 @@ export function InventoryPage(): JSX.Element {
   }
 
   async function handleResetSummaryFilters(): Promise<void> {
+    if (!canFetchSkus) {
+      setErrorMessage("当前账号缺少 INVENTORY:READ 权限，无法重置并查询库存汇总。");
+      return;
+    }
     setSummaryQuerySkuId("");
     setSummaryQueryCategoryId("");
     setSummaryQueryKeyword("");
@@ -556,6 +621,10 @@ export function InventoryPage(): JSX.Element {
   }
 
   async function handleInboundStock(): Promise<void> {
+    if (!canWriteInventory) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法执行库存入库。");
+      return;
+    }
     if (!stockOpsSkuId || !stockOpsSku || stockOpsSku.stockMode !== "QUANTITY") {
       setErrorMessage("请先在库存汇总中选择一个“数量库存(QUANTITY)”的物料。");
       return;
@@ -591,6 +660,10 @@ export function InventoryPage(): JSX.Element {
   }
 
   async function handleOutboundStock(): Promise<void> {
+    if (!canWriteInventory) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法执行库存出库。");
+      return;
+    }
     if (!stockOpsSkuId || !stockOpsSku || stockOpsSku.stockMode !== "QUANTITY") {
       setErrorMessage("请先在库存汇总中选择一个“数量库存(QUANTITY)”的物料。");
       return;
@@ -627,6 +700,10 @@ export function InventoryPage(): JSX.Element {
   }
 
   async function handleAdjustStock(): Promise<void> {
+    if (!canWriteInventory) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法执行库存盘点调整。");
+      return;
+    }
     if (!stockOpsSkuId || !stockOpsSku || stockOpsSku.stockMode !== "QUANTITY") {
       setErrorMessage("请先在库存汇总中选择一个“数量库存(QUANTITY)”的物料。");
       return;
@@ -663,6 +740,10 @@ export function InventoryPage(): JSX.Element {
   }
 
   async function handleFetchFlows(nextPage?: number): Promise<void> {
+    if (!canReadInventory) {
+      setErrorMessage("当前账号缺少 INVENTORY:READ 权限，无法查询库存流水。");
+      return;
+    }
     if (!stockOpsSkuId || !stockOpsSku || stockOpsSku.stockMode !== "QUANTITY") {
       setErrorMessage("仅支持查询数量库存(QUANTITY)的库存流水。");
       return;
@@ -693,6 +774,10 @@ export function InventoryPage(): JSX.Element {
   }
 
   async function handleExportFlows(): Promise<void> {
+    if (!canReadInventory) {
+      setErrorMessage("当前账号缺少 INVENTORY:READ 权限，无法导出库存流水。");
+      return;
+    }
     if (!stockOpsSkuId || !stockOpsSku || stockOpsSku.stockMode !== "QUANTITY") {
       setErrorMessage("仅支持导出数量库存(QUANTITY)的库存流水。");
       return;
@@ -724,9 +809,12 @@ export function InventoryPage(): JSX.Element {
   }
 
   useEffect(() => {
+    if (!canFetchSkus) {
+      return;
+    }
     void handleFetchSkus();
     void handleFetchSummary();
-  }, [token]);
+  }, [canFetchSkus, token]);
 
   return (
     <div className="page-stack">
@@ -802,7 +890,7 @@ export function InventoryPage(): JSX.Element {
               <button
                 className="app-shell__header-action"
                 type="button"
-                disabled={isLoadingSkus}
+                disabled={isLoadingSkus || !canFetchSkus}
                 onClick={() => {
                   void handleFetchSkus();
                 }}
@@ -812,7 +900,7 @@ export function InventoryPage(): JSX.Element {
               <button
                 className="app-shell__header-action"
                 type="button"
-                disabled={isLoadingSkus}
+                disabled={isLoadingSkus || !canFetchSkus}
                 onClick={() => {
                   void handleResetSkuFilters();
                 }}
@@ -866,6 +954,7 @@ export function InventoryPage(): JSX.Element {
                             <button
                               className="app-shell__header-action"
                               type="button"
+                              disabled={!canWriteInventory}
                               onClick={() => {
                                 handleStartEditSku(item);
                               }}
@@ -875,7 +964,7 @@ export function InventoryPage(): JSX.Element {
                             <button
                               className="app-shell__header-action inbound-action-danger"
                               type="button"
-                              disabled={deletingSkuId === item.id}
+                              disabled={deletingSkuId === item.id || !canWriteInventory}
                               onClick={() => {
                                 void handleDeleteSku(item.id);
                               }}
@@ -952,7 +1041,7 @@ export function InventoryPage(): JSX.Element {
                       className="inbound-file-input"
                       type="file"
                       accept="image/png,image/jpeg,image/webp"
-                      disabled={isUploadingNewSkuCover}
+                      disabled={isUploadingNewSkuCover || !canWriteInventory}
                       onChange={(event) => {
                         const file = event.target.files?.[0] ?? null;
                         if (file) {
@@ -978,7 +1067,7 @@ export function InventoryPage(): JSX.Element {
                 <button
                   className="auth-submit"
                   type="button"
-                  disabled={isCreatingSku}
+                  disabled={isCreatingSku || !canWriteInventory}
                   onClick={() => {
                     void handleCreateSku();
                   }}
@@ -1052,7 +1141,7 @@ export function InventoryPage(): JSX.Element {
                         className="inbound-file-input"
                         type="file"
                         accept="image/png,image/jpeg,image/webp"
-                        disabled={isUploadingEditSkuCover}
+                        disabled={isUploadingEditSkuCover || !canWriteInventory}
                         onChange={(event) => {
                           const file = event.target.files?.[0] ?? null;
                           if (file) {
@@ -1079,7 +1168,7 @@ export function InventoryPage(): JSX.Element {
                     <button
                       className="auth-submit"
                       type="button"
-                      disabled={isUpdatingSku}
+                      disabled={isUpdatingSku || !canWriteInventory}
                       onClick={() => {
                         void handleUpdateSku();
                       }}
@@ -1089,7 +1178,7 @@ export function InventoryPage(): JSX.Element {
                     <button
                       className="app-shell__header-action"
                       type="button"
-                      disabled={isUpdatingSku}
+                      disabled={isUpdatingSku || !canWriteInventory}
                       onClick={() => {
                         handleCancelEditSku();
                       }}
@@ -1172,7 +1261,7 @@ export function InventoryPage(): JSX.Element {
               <button
                 className="auth-submit"
                 type="button"
-                disabled={isCreatingAssets}
+                disabled={isCreatingAssets || !canWriteInventory}
                 onClick={() => {
                   void handleCreateAssets();
                 }}
@@ -1183,7 +1272,7 @@ export function InventoryPage(): JSX.Element {
               <button
                 className="app-shell__header-action"
                 type="button"
-                disabled={isLoadingAssets}
+                disabled={isLoadingAssets || !canFetchAssets}
                 onClick={() => {
                   void handleFetchAssets();
                 }}
@@ -1226,6 +1315,7 @@ export function InventoryPage(): JSX.Element {
                             <button
                               className="app-shell__header-action"
                               type="button"
+                              disabled={!canWriteInventory}
                               onClick={() => {
                                 handleStartEditAsset(item);
                               }}
@@ -1235,7 +1325,7 @@ export function InventoryPage(): JSX.Element {
                             <button
                               className="app-shell__header-action inbound-action-danger"
                               type="button"
-                              disabled={deletingAssetId === item.id}
+                              disabled={deletingAssetId === item.id || !canWriteInventory}
                               onClick={() => {
                                 void handleDeleteAsset(item.id);
                               }}
@@ -1315,7 +1405,7 @@ export function InventoryPage(): JSX.Element {
                     <button
                       className="auth-submit"
                       type="button"
-                      disabled={isUpdatingAsset}
+                      disabled={isUpdatingAsset || !canWriteInventory}
                       onClick={() => {
                         void handleUpdateAsset();
                       }}
@@ -1325,7 +1415,7 @@ export function InventoryPage(): JSX.Element {
                     <button
                       className="app-shell__header-action"
                       type="button"
-                      disabled={isUpdatingAsset}
+                      disabled={isUpdatingAsset || !canWriteInventory}
                       onClick={() => {
                         handleCancelEditAsset();
                       }}
@@ -1376,7 +1466,7 @@ export function InventoryPage(): JSX.Element {
               <button
                 className="app-shell__header-action"
                 type="button"
-                disabled={isLoadingSummary}
+                disabled={isLoadingSummary || !canFetchSkus}
                 onClick={() => {
                   void handleFetchSummary();
                 }}
@@ -1386,7 +1476,7 @@ export function InventoryPage(): JSX.Element {
               <button
                 className="app-shell__header-action"
                 type="button"
-                disabled={isLoadingSummary}
+                disabled={isLoadingSummary || !canFetchSkus}
                 onClick={() => {
                   void handleResetSummaryFilters();
                 }}
@@ -1419,7 +1509,7 @@ export function InventoryPage(): JSX.Element {
                         <th>现存</th>
                         <th>预占</th>
                         <th>可用</th>
-                        <th>使用中</th>
+                        <th>使用中（仅序列号资产）</th>
                         <th>安全阈值</th>
                         <th>状态</th>
                         <th>操作</th>
@@ -1449,7 +1539,18 @@ export function InventoryPage(): JSX.Element {
                           <td>{item.onHandQty}</td>
                           <td>{item.reservedQty}</td>
                           <td>{item.availableQty}</td>
-                          <td>{item.inUseCount}</td>
+                          <td>
+                            {item.stockMode === "QUANTITY" ? (
+                              <span
+                                className="inventory-na-cell"
+                                title="数量库存不区分使用中状态"
+                              >
+                                -
+                              </span>
+                            ) : (
+                              item.inUseCount
+                            )}
+                          </td>
                           <td>{item.safetyStockThreshold}</td>
                           <td>{item.belowSafetyStock ? "低库存" : "正常"}</td>
                           <td>
@@ -1514,7 +1615,7 @@ export function InventoryPage(): JSX.Element {
                         <button
                           className="app-shell__header-action"
                           type="button"
-                          disabled={isLoadingFlows}
+                          disabled={isLoadingFlows || !canReadInventory}
                           onClick={() => {
                             void handleFetchFlows(1);
                           }}
@@ -1524,7 +1625,7 @@ export function InventoryPage(): JSX.Element {
                         <button
                           className="app-shell__header-action"
                           type="button"
-                          disabled={isExportingFlows}
+                          disabled={isExportingFlows || !canReadInventory}
                           onClick={() => {
                             void handleExportFlows();
                           }}
@@ -1554,7 +1655,7 @@ export function InventoryPage(): JSX.Element {
                           <button
                             className="auth-submit"
                             type="button"
-                            disabled={isSubmittingStockOp}
+                            disabled={isSubmittingStockOp || !canWriteInventory}
                             onClick={() => {
                               void handleInboundStock();
                             }}
@@ -1585,7 +1686,7 @@ export function InventoryPage(): JSX.Element {
                           <button
                             className="auth-submit"
                             type="button"
-                            disabled={isSubmittingStockOp}
+                            disabled={isSubmittingStockOp || !canWriteInventory}
                             onClick={() => {
                               void handleOutboundStock();
                             }}
@@ -1616,7 +1717,7 @@ export function InventoryPage(): JSX.Element {
                           <button
                             className="auth-submit"
                             type="button"
-                            disabled={isSubmittingStockOp}
+                            disabled={isSubmittingStockOp || !canWriteInventory}
                             onClick={() => {
                               void handleAdjustStock();
                             }}
@@ -1690,7 +1791,7 @@ export function InventoryPage(): JSX.Element {
                             <button
                               className="app-shell__header-action"
                               type="button"
-                              disabled={isLoadingFlows}
+                              disabled={isLoadingFlows || !canReadInventory}
                               onClick={() => {
                                 void handleFetchFlows(1);
                               }}
@@ -1700,7 +1801,7 @@ export function InventoryPage(): JSX.Element {
                             <button
                               className="app-shell__header-action"
                               type="button"
-                              disabled={isExportingFlows}
+                              disabled={isExportingFlows || !canReadInventory}
                               onClick={() => {
                                 void handleExportFlows();
                               }}
@@ -1754,7 +1855,7 @@ export function InventoryPage(): JSX.Element {
                               <button
                                 className="app-shell__header-action"
                                 type="button"
-                                disabled={isLoadingFlows || flowPage <= 1}
+                                disabled={isLoadingFlows || flowPage <= 1 || !canReadInventory}
                                 onClick={() => {
                                   void handleFetchFlows(Math.max(1, flowPage - 1));
                                 }}
@@ -1769,7 +1870,8 @@ export function InventoryPage(): JSX.Element {
                                 type="button"
                                 disabled={
                                   isLoadingFlows ||
-                                  flowPage >= Math.max(1, Math.ceil(flowTotal / flowPageSize))
+                                  flowPage >= Math.max(1, Math.ceil(flowTotal / flowPageSize)) ||
+                                  !canReadInventory
                                 }
                                 onClick={() => {
                                   void handleFetchFlows(flowPage + 1);

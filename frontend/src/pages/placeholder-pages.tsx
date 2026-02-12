@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+﻿import { useState, type FormEvent } from "react";
 
 import {
   BLUEPRINT_INTERACTION_GUARDRAILS,
@@ -218,13 +218,24 @@ interface ForbiddenRouteStateProps {
   readonly routePath: string;
   readonly currentRoles: readonly AppRole[];
   readonly requiredRoles: readonly AppRole[];
+  readonly currentPermissions?: readonly string[];
+  readonly requiredPermissions?: readonly string[];
 }
 
 export function ForbiddenRouteState({
   routePath,
   currentRoles,
   requiredRoles,
+  currentPermissions = [],
+  requiredPermissions = [],
 }: ForbiddenRouteStateProps): JSX.Element {
+  const currentPermissionLabel = currentPermissions.length
+    ? currentPermissions.join(" / ")
+    : "无";
+  const requiredPermissionLabel = requiredPermissions.length
+    ? requiredPermissions.join(" / ")
+    : "无";
+
   return (
     <section className="forbidden-state" role="alert" aria-live="polite">
       <p className="app-shell__section-label">访问受限</p>
@@ -234,6 +245,12 @@ export function ForbiddenRouteState({
       </p>
       <p className="forbidden-state__copy">
         所需角色：<strong>{toRoleList(requiredRoles)}</strong>
+      </p>
+      <p className="forbidden-state__copy">
+        当前权限：<strong>{currentPermissionLabel}</strong>
+      </p>
+      <p className="forbidden-state__copy">
+        所需权限：<strong>{requiredPermissionLabel}</strong>
       </p>
       <p className="forbidden-state__copy">
         权限守卫规则：

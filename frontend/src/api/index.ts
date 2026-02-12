@@ -25,6 +25,10 @@ interface LoginResponseBody {
     readonly id: number;
     readonly employee_no: string;
     readonly name: string;
+    readonly department_name: string | null;
+    readonly section_name: string | null;
+    readonly mobile_phone: string | null;
+    readonly job_title: string | null;
     readonly roles: AppRole[];
     readonly permissions: string[];
   };
@@ -108,6 +112,10 @@ interface ApplicationItemResponseBody {
   readonly sku_id: number;
   readonly quantity: number;
   readonly note: string | null;
+  readonly brand?: string;
+  readonly model?: string;
+  readonly spec?: string;
+  readonly cover_url?: string | null;
 }
 
 interface ApplicationAssetResponseBody {
@@ -123,7 +131,14 @@ interface ApplicationResponseBody {
   readonly delivery_type: "PICKUP" | "EXPRESS";
   readonly pickup_code: string;
   readonly pickup_qr_string: string | null;
+  readonly title: string | null;
   readonly created_at: string;
+  readonly applicant_snapshot: {
+    readonly name: string | null;
+    readonly department_name: string | null;
+    readonly phone: string | null;
+    readonly job_title: string | null;
+  } | null;
   readonly items: ApplicationItemResponseBody[];
   readonly locked_assets: ApplicationAssetResponseBody[];
   readonly express_address:
@@ -139,10 +154,12 @@ interface AiPrecheckResponseBody {
 
 interface ApprovalInboxItemResponseBody {
   readonly application_id: number;
+  readonly title: string;
   readonly applicant: {
     readonly id: number;
     readonly name: string;
     readonly department_id: number;
+    readonly department_name?: string | null;
   };
   readonly delivery_type: "PICKUP" | "EXPRESS";
   readonly status: string;
@@ -150,6 +167,10 @@ interface ApprovalInboxItemResponseBody {
   readonly items_summary: Array<{
     readonly sku_id: number;
     readonly quantity: number;
+    readonly brand?: string;
+    readonly model?: string;
+    readonly spec?: string;
+    readonly cover_url?: string | null;
   }>;
   readonly ai_suggestion: {
     readonly recommendation: "PASS" | "REJECT";
@@ -166,9 +187,36 @@ interface ApprovalInboxResponseBody {
   };
 }
 
+interface MyApplicationItemResponseBody {
+  readonly id: number;
+  readonly title: string;
+  readonly status: string;
+  readonly delivery_type: "PICKUP" | "EXPRESS";
+  readonly pickup_code: string;
+  readonly created_at: string;
+  readonly items_summary: Array<{
+    readonly sku_id: number;
+    readonly quantity: number;
+    readonly brand: string;
+    readonly model: string;
+    readonly spec: string;
+    readonly cover_url: string | null;
+  }>;
+}
+
+interface MyApplicationsResponseBody {
+  readonly items: MyApplicationItemResponseBody[];
+  readonly meta: {
+    readonly page: number;
+    readonly page_size: number;
+    readonly total: number;
+  };
+}
+
 interface ApplicationDetailResponseBody {
   readonly application: {
     readonly id: number;
+    readonly title?: string | null;
     readonly applicant_user_id: number;
     readonly type: string;
     readonly status: string;
@@ -178,6 +226,22 @@ interface ApplicationDetailResponseBody {
     readonly created_at: string;
     readonly leader_approver_user_id: number | null;
     readonly admin_reviewer_user_id: number | null;
+    readonly applicant_snapshot?: {
+      readonly name?: string | null;
+      readonly department_name?: string | null;
+      readonly phone?: string | null;
+      readonly job_title?: string | null;
+    } | null;
+    readonly express_address_snapshot?:
+      | {
+          readonly receiver_name?: string | null;
+          readonly receiver_phone?: string | null;
+          readonly province?: string | null;
+          readonly city?: string | null;
+          readonly district?: string | null;
+          readonly detail?: string | null;
+        }
+      | null;
     readonly items: ApplicationItemResponseBody[];
   };
   readonly approval_history: Array<{
@@ -326,6 +390,68 @@ interface OutboundShipResponseBody {
   }>;
 }
 
+interface OutboundRecordItemResponseBody {
+  readonly record_key: string;
+  readonly record_type: "ASSET" | "SKU_QUANTITY";
+  readonly action: "OUTBOUND" | "SHIP";
+  readonly occurred_at: string;
+  readonly meta_json: Record<string, unknown> | null;
+  readonly application_id: number | null;
+  readonly application_title: string | null;
+  readonly application_type: string | null;
+  readonly application_status: string | null;
+  readonly delivery_type: "PICKUP" | "EXPRESS" | null;
+  readonly pickup_code: string | null;
+  readonly pickup_qr_string: string | null;
+  readonly application_created_at: string | null;
+  readonly applicant_user_id: number | null;
+  readonly applicant_name_snapshot: string | null;
+  readonly applicant_department_snapshot: string | null;
+  readonly applicant_phone_snapshot: string | null;
+  readonly applicant_job_title_snapshot: string | null;
+  readonly carrier: string | null;
+  readonly tracking_no: string | null;
+  readonly shipped_at: string | null;
+  readonly logistics_receiver_name: string | null;
+  readonly logistics_receiver_phone: string | null;
+  readonly logistics_province: string | null;
+  readonly logistics_city: string | null;
+  readonly logistics_district: string | null;
+  readonly logistics_detail: string | null;
+  readonly sku_id: number | null;
+  readonly category_id: number | null;
+  readonly category_name: string | null;
+  readonly brand: string | null;
+  readonly model: string | null;
+  readonly spec: string | null;
+  readonly stock_mode: SkuStockMode | null;
+  readonly reference_price: string | null;
+  readonly cover_url: string | null;
+  readonly safety_stock_threshold: number | null;
+  readonly asset_id: number | null;
+  readonly asset_tag: string | null;
+  readonly sn: string | null;
+  readonly asset_status: string | null;
+  readonly holder_user_id: number | null;
+  readonly inbound_at: string | null;
+  readonly quantity: number | null;
+  readonly on_hand_delta: number | null;
+  readonly reserved_delta: number | null;
+  readonly on_hand_qty_after: number | null;
+  readonly reserved_qty_after: number | null;
+  readonly operator_user_id: number | null;
+  readonly operator_name: string | null;
+}
+
+interface OutboundRecordsResponseBody {
+  readonly items: OutboundRecordItemResponseBody[];
+  readonly meta: {
+    readonly page: number;
+    readonly page_size: number;
+    readonly total: number;
+  };
+}
+
 interface InboundOcrJobCreateResponseBody {
   readonly job_id: number;
   readonly status: string;
@@ -404,6 +530,10 @@ export interface SessionUser {
   readonly id: number;
   readonly employeeNo: string;
   readonly name: string;
+  readonly departmentName: string | null;
+  readonly sectionName: string | null;
+  readonly mobilePhone: string | null;
+  readonly jobTitle: string | null;
   readonly roles: AppRole[];
   readonly permissions: string[];
 }
@@ -517,6 +647,8 @@ export interface ApplicationCreateInput {
     readonly detail: string;
   };
   readonly applicantReason?: string;
+  readonly applicantDepartmentName?: string;
+  readonly applicantPhone?: string;
   readonly applicantJobTitle?: string;
 }
 
@@ -529,7 +661,14 @@ export interface ApplicationItemResult {
 
 export interface ApplicationResult {
   readonly id: number;
+  readonly title: string | null;
   readonly applicantUserId: number;
+  readonly applicantSnapshot: {
+    readonly name: string | null;
+    readonly departmentName: string | null;
+    readonly phone: string | null;
+    readonly jobTitle: string | null;
+  } | null;
   readonly type: string;
   readonly status: string;
   readonly deliveryType: "PICKUP" | "EXPRESS";
@@ -538,6 +677,32 @@ export interface ApplicationResult {
   readonly createdAt: string;
   readonly items: ApplicationItemResult[];
   readonly lockedAssetIds: number[];
+}
+
+export interface MyApplicationSummary {
+  readonly id: number;
+  readonly title: string;
+  readonly status: string;
+  readonly deliveryType: "PICKUP" | "EXPRESS";
+  readonly pickupCode: string;
+  readonly createdAt: string;
+  readonly itemsSummary: Array<{
+    readonly skuId: number;
+    readonly quantity: number;
+    readonly brand: string;
+    readonly model: string;
+    readonly spec: string;
+    readonly coverUrl: string | null;
+  }>;
+}
+
+export interface MyApplicationsResult {
+  readonly items: MyApplicationSummary[];
+  readonly meta: {
+    readonly page: number;
+    readonly pageSize: number;
+    readonly total: number;
+  };
 }
 
 export interface AiPrecheckInput {
@@ -553,10 +718,12 @@ export interface AiPrecheckResult {
 
 export interface ApprovalInboxItem {
   readonly applicationId: number;
+  readonly title: string;
   readonly applicant: {
     readonly id: number;
     readonly name: string;
     readonly departmentId: number;
+    readonly departmentName: string | null;
   };
   readonly deliveryType: "PICKUP" | "EXPRESS";
   readonly status: string;
@@ -564,6 +731,10 @@ export interface ApprovalInboxItem {
   readonly itemsSummary: Array<{
     readonly skuId: number;
     readonly quantity: number;
+    readonly brand: string | null;
+    readonly model: string | null;
+    readonly spec: string | null;
+    readonly coverUrl: string | null;
   }>;
   readonly aiSuggestion: {
     readonly recommendation: "PASS" | "REJECT";
@@ -583,6 +754,7 @@ export interface ApprovalInboxResult {
 export interface ApplicationDetailResult {
   readonly application: {
     readonly id: number;
+    readonly title: string | null;
     readonly applicantUserId: number;
     readonly type: string;
     readonly status: string;
@@ -592,7 +764,28 @@ export interface ApplicationDetailResult {
     readonly createdAt: string;
     readonly leaderApproverUserId: number | null;
     readonly adminReviewerUserId: number | null;
-    readonly items: ApplicationItemResult[];
+    readonly applicantSnapshot: {
+      readonly name: string | null;
+      readonly departmentName: string | null;
+      readonly phone: string | null;
+      readonly jobTitle: string | null;
+    } | null;
+    readonly expressAddressSnapshot: {
+      readonly receiverName: string | null;
+      readonly receiverPhone: string | null;
+      readonly province: string | null;
+      readonly city: string | null;
+      readonly district: string | null;
+      readonly detail: string | null;
+    } | null;
+    readonly items: Array<
+      ApplicationItemResult & {
+        readonly brand: string | null;
+        readonly model: string | null;
+        readonly spec: string | null;
+        readonly coverUrl: string | null;
+      }
+    >;
   };
   readonly approvalHistory: Array<{
     readonly id: number;
@@ -718,6 +911,83 @@ export interface OutboundConfirmPickupResult {
     readonly skuId: number;
     readonly quantity: number;
   }>;
+}
+
+export interface OutboundRecordItem {
+  readonly recordKey: string;
+  readonly recordType: "ASSET" | "SKU_QUANTITY";
+  readonly action: "OUTBOUND" | "SHIP";
+  readonly occurredAt: string;
+  readonly metaJson: Record<string, unknown> | null;
+  readonly applicationId: number | null;
+  readonly applicationTitle: string | null;
+  readonly applicationType: string | null;
+  readonly applicationStatus: string | null;
+  readonly deliveryType: "PICKUP" | "EXPRESS" | null;
+  readonly pickupCode: string | null;
+  readonly pickupQrString: string | null;
+  readonly applicationCreatedAt: string | null;
+  readonly applicantUserId: number | null;
+  readonly applicantNameSnapshot: string | null;
+  readonly applicantDepartmentSnapshot: string | null;
+  readonly applicantPhoneSnapshot: string | null;
+  readonly applicantJobTitleSnapshot: string | null;
+  readonly carrier: string | null;
+  readonly trackingNo: string | null;
+  readonly shippedAt: string | null;
+  readonly logisticsReceiverName: string | null;
+  readonly logisticsReceiverPhone: string | null;
+  readonly logisticsProvince: string | null;
+  readonly logisticsCity: string | null;
+  readonly logisticsDistrict: string | null;
+  readonly logisticsDetail: string | null;
+  readonly skuId: number | null;
+  readonly categoryId: number | null;
+  readonly categoryName: string | null;
+  readonly brand: string | null;
+  readonly model: string | null;
+  readonly spec: string | null;
+  readonly stockMode: SkuStockMode | null;
+  readonly referencePrice: string | null;
+  readonly coverUrl: string | null;
+  readonly safetyStockThreshold: number | null;
+  readonly assetId: number | null;
+  readonly assetTag: string | null;
+  readonly sn: string | null;
+  readonly assetStatus: string | null;
+  readonly holderUserId: number | null;
+  readonly inboundAt: string | null;
+  readonly quantity: number | null;
+  readonly onHandDelta: number | null;
+  readonly reservedDelta: number | null;
+  readonly onHandQtyAfter: number | null;
+  readonly reservedQtyAfter: number | null;
+  readonly operatorUserId: number | null;
+  readonly operatorName: string | null;
+}
+
+export interface OutboundRecordsResult {
+  readonly items: OutboundRecordItem[];
+  readonly meta: {
+    readonly page: number;
+    readonly pageSize: number;
+    readonly total: number;
+  };
+}
+
+export interface OutboundRecordsQuery {
+  readonly page?: number;
+  readonly pageSize?: number;
+  readonly from?: string;
+  readonly to?: string;
+  readonly action?: "OUTBOUND" | "SHIP";
+  readonly recordType?: "ASSET" | "SKU_QUANTITY";
+  readonly deliveryType?: "PICKUP" | "EXPRESS";
+  readonly applicationId?: number;
+  readonly operatorUserId?: number;
+  readonly skuId?: number;
+  readonly assetId?: number;
+  readonly q?: string;
 }
 
 export type InboundOcrDocType = "INVOICE" | "DELIVERY_NOTE" | "OTHER";
@@ -950,6 +1220,10 @@ export async function loginWithPassword(
       id: envelope.data.user.id,
       employeeNo: envelope.data.user.employee_no,
       name: envelope.data.user.name,
+      departmentName: envelope.data.user.department_name,
+      sectionName: envelope.data.user.section_name,
+      mobilePhone: envelope.data.user.mobile_phone,
+      jobTitle: envelope.data.user.job_title,
       roles: envelope.data.user.roles,
       permissions: envelope.data.user.permissions,
     },
@@ -1296,6 +1570,80 @@ export async function createMyAddress(
   };
 }
 
+export async function fetchMyDepartments(accessToken: string): Promise<string[]> {
+  assertToken(accessToken);
+  const envelope = await requestApi<string[]>("/me/departments", {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  return (envelope.data ?? []).map((item) => String(item));
+}
+
+export async function fetchMyApplications(
+  accessToken: string,
+  options?: {
+    readonly status?: string;
+    readonly page?: number;
+    readonly pageSize?: number;
+  },
+): Promise<MyApplicationsResult> {
+  assertToken(accessToken);
+  const searchParams = new URLSearchParams();
+  searchParams.set("page", String(options?.page ?? 1));
+  searchParams.set("page_size", String(options?.pageSize ?? 20));
+  if (options?.status && options.status.trim()) {
+    searchParams.set("status", options.status.trim());
+  }
+
+  const envelope = await requestApi<MyApplicationsResponseBody>(
+    `/me/applications?${searchParams.toString()}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!envelope.data) {
+    return {
+      items: [],
+      meta: {
+        page: options?.page ?? 1,
+        pageSize: options?.pageSize ?? 20,
+        total: 0,
+      },
+    };
+  }
+
+  return {
+    items: envelope.data.items.map((item) => ({
+      id: item.id,
+      title: item.title,
+      status: item.status,
+      deliveryType: item.delivery_type,
+      pickupCode: item.pickup_code,
+      createdAt: item.created_at,
+      itemsSummary: item.items_summary.map((summary) => ({
+        skuId: summary.sku_id,
+        quantity: summary.quantity,
+        brand: summary.brand,
+        model: summary.model,
+        spec: summary.spec,
+        coverUrl: summary.cover_url,
+      })),
+    })),
+    meta: {
+      page: envelope.data.meta.page,
+      pageSize: envelope.data.meta.page_size,
+      total: envelope.data.meta.total,
+    },
+  };
+}
+
 export async function createApplication(
   accessToken: string,
   input: ApplicationCreateInput,
@@ -1327,6 +1675,8 @@ export async function createApplication(
           }
         : undefined,
       applicant_reason: input.applicantReason,
+      applicant_department_name: input.applicantDepartmentName,
+      applicant_phone: input.applicantPhone,
       applicant_job_title: input.applicantJobTitle,
     }),
   });
@@ -1340,7 +1690,16 @@ export async function createApplication(
 
   return {
     id: envelope.data.id,
+    title: envelope.data.title,
     applicantUserId: envelope.data.applicant_user_id,
+    applicantSnapshot: envelope.data.applicant_snapshot
+      ? {
+          name: envelope.data.applicant_snapshot.name,
+          departmentName: envelope.data.applicant_snapshot.department_name,
+          phone: envelope.data.applicant_snapshot.phone,
+          jobTitle: envelope.data.applicant_snapshot.job_title,
+        }
+      : null,
     type: envelope.data.type,
     status: envelope.data.status,
     deliveryType: envelope.data.delivery_type,
@@ -1429,10 +1788,12 @@ export async function fetchApprovalInbox(
   return {
     items: envelope.data.items.map((item) => ({
       applicationId: item.application_id,
+      title: item.title,
       applicant: {
         id: item.applicant.id,
         name: item.applicant.name,
         departmentId: item.applicant.department_id,
+        departmentName: item.applicant.department_name ?? null,
       },
       deliveryType: item.delivery_type,
       status: item.status,
@@ -1440,6 +1801,10 @@ export async function fetchApprovalInbox(
       itemsSummary: item.items_summary.map((summary) => ({
         skuId: summary.sku_id,
         quantity: summary.quantity,
+        brand: summary.brand ?? null,
+        model: summary.model ?? null,
+        spec: summary.spec ?? null,
+        coverUrl: summary.cover_url ?? null,
       })),
       aiSuggestion: item.ai_suggestion,
     })),
@@ -1473,6 +1838,7 @@ export async function fetchApplicationDetail(
   return {
     application: {
       id: envelope.data.application.id,
+      title: envelope.data.application.title ?? null,
       applicantUserId: envelope.data.application.applicant_user_id,
       type: envelope.data.application.type,
       status: envelope.data.application.status,
@@ -1482,11 +1848,36 @@ export async function fetchApplicationDetail(
       createdAt: envelope.data.application.created_at,
       leaderApproverUserId: envelope.data.application.leader_approver_user_id,
       adminReviewerUserId: envelope.data.application.admin_reviewer_user_id,
+      applicantSnapshot: envelope.data.application.applicant_snapshot
+        ? {
+            name: envelope.data.application.applicant_snapshot.name ?? null,
+            departmentName:
+              envelope.data.application.applicant_snapshot.department_name ?? null,
+            phone: envelope.data.application.applicant_snapshot.phone ?? null,
+            jobTitle: envelope.data.application.applicant_snapshot.job_title ?? null,
+          }
+        : null,
+      expressAddressSnapshot: envelope.data.application.express_address_snapshot
+        ? {
+            receiverName:
+              envelope.data.application.express_address_snapshot.receiver_name ?? null,
+            receiverPhone:
+              envelope.data.application.express_address_snapshot.receiver_phone ?? null,
+            province: envelope.data.application.express_address_snapshot.province ?? null,
+            city: envelope.data.application.express_address_snapshot.city ?? null,
+            district: envelope.data.application.express_address_snapshot.district ?? null,
+            detail: envelope.data.application.express_address_snapshot.detail ?? null,
+          }
+        : null,
       items: envelope.data.application.items.map((item) => ({
         id: item.id,
         skuId: item.sku_id,
         quantity: item.quantity,
         note: item.note,
+        brand: item.brand ?? null,
+        model: item.model ?? null,
+        spec: item.spec ?? null,
+        coverUrl: item.cover_url ?? null,
       })),
     },
     approvalHistory: envelope.data.approval_history.map((item) => ({
@@ -1889,6 +2280,199 @@ export async function shipOutbound(
     applicationId: envelope.data.application_id,
     status: envelope.data.status,
   };
+}
+
+export async function fetchOutboundRecords(
+  accessToken: string,
+  options?: OutboundRecordsQuery,
+): Promise<OutboundRecordsResult> {
+  assertToken(accessToken);
+  const searchParams = new URLSearchParams();
+  searchParams.set("page", String(options?.page ?? 1));
+  searchParams.set("page_size", String(options?.pageSize ?? 20));
+  if (options?.from) {
+    searchParams.set("from", options.from);
+  }
+  if (options?.to) {
+    searchParams.set("to", options.to);
+  }
+  if (options?.action) {
+    searchParams.set("action", options.action);
+  }
+  if (options?.recordType) {
+    searchParams.set("record_type", options.recordType);
+  }
+  if (options?.deliveryType) {
+    searchParams.set("delivery_type", options.deliveryType);
+  }
+  if (options?.applicationId) {
+    searchParams.set("application_id", String(options.applicationId));
+  }
+  if (options?.operatorUserId) {
+    searchParams.set("operator_user_id", String(options.operatorUserId));
+  }
+  if (options?.skuId) {
+    searchParams.set("sku_id", String(options.skuId));
+  }
+  if (options?.assetId) {
+    searchParams.set("asset_id", String(options.assetId));
+  }
+  if (options?.q && options.q.trim()) {
+    searchParams.set("q", options.q.trim());
+  }
+
+  const envelope = await requestApi<OutboundRecordsResponseBody>(
+    `/outbound/records?${searchParams.toString()}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!envelope.data) {
+    return {
+      items: [],
+      meta: {
+        page: options?.page ?? 1,
+        pageSize: options?.pageSize ?? 20,
+        total: 0,
+      },
+    };
+  }
+
+  return {
+    items: envelope.data.items.map((item) => ({
+      recordKey: item.record_key,
+      recordType: item.record_type,
+      action: item.action,
+      occurredAt: item.occurred_at,
+      metaJson: item.meta_json,
+      applicationId: item.application_id,
+      applicationTitle: item.application_title,
+      applicationType: item.application_type,
+      applicationStatus: item.application_status,
+      deliveryType: item.delivery_type,
+      pickupCode: item.pickup_code,
+      pickupQrString: item.pickup_qr_string,
+      applicationCreatedAt: item.application_created_at,
+      applicantUserId: item.applicant_user_id,
+      applicantNameSnapshot: item.applicant_name_snapshot,
+      applicantDepartmentSnapshot: item.applicant_department_snapshot,
+      applicantPhoneSnapshot: item.applicant_phone_snapshot,
+      applicantJobTitleSnapshot: item.applicant_job_title_snapshot,
+      carrier: item.carrier,
+      trackingNo: item.tracking_no,
+      shippedAt: item.shipped_at,
+      logisticsReceiverName: item.logistics_receiver_name,
+      logisticsReceiverPhone: item.logistics_receiver_phone,
+      logisticsProvince: item.logistics_province,
+      logisticsCity: item.logistics_city,
+      logisticsDistrict: item.logistics_district,
+      logisticsDetail: item.logistics_detail,
+      skuId: item.sku_id,
+      categoryId: item.category_id,
+      categoryName: item.category_name,
+      brand: item.brand,
+      model: item.model,
+      spec: item.spec,
+      stockMode: item.stock_mode,
+      referencePrice: item.reference_price,
+      coverUrl: item.cover_url,
+      safetyStockThreshold: item.safety_stock_threshold,
+      assetId: item.asset_id,
+      assetTag: item.asset_tag,
+      sn: item.sn,
+      assetStatus: item.asset_status,
+      holderUserId: item.holder_user_id,
+      inboundAt: item.inbound_at,
+      quantity: item.quantity,
+      onHandDelta: item.on_hand_delta,
+      reservedDelta: item.reserved_delta,
+      onHandQtyAfter: item.on_hand_qty_after,
+      reservedQtyAfter: item.reserved_qty_after,
+      operatorUserId: item.operator_user_id,
+      operatorName: item.operator_name,
+    })),
+    meta: {
+      page: envelope.data.meta.page,
+      pageSize: envelope.data.meta.page_size,
+      total: envelope.data.meta.total,
+    },
+  };
+}
+
+export async function downloadOutboundRecordsCsv(
+  accessToken: string,
+  options?: Omit<OutboundRecordsQuery, "page" | "pageSize">,
+): Promise<{ readonly fileName: string; readonly blob: Blob }> {
+  assertToken(accessToken);
+  const searchParams = new URLSearchParams();
+  if (options?.from) {
+    searchParams.set("from", options.from);
+  }
+  if (options?.to) {
+    searchParams.set("to", options.to);
+  }
+  if (options?.action) {
+    searchParams.set("action", options.action);
+  }
+  if (options?.recordType) {
+    searchParams.set("record_type", options.recordType);
+  }
+  if (options?.deliveryType) {
+    searchParams.set("delivery_type", options.deliveryType);
+  }
+  if (options?.applicationId) {
+    searchParams.set("application_id", String(options.applicationId));
+  }
+  if (options?.operatorUserId) {
+    searchParams.set("operator_user_id", String(options.operatorUserId));
+  }
+  if (options?.skuId) {
+    searchParams.set("sku_id", String(options.skuId));
+  }
+  if (options?.assetId) {
+    searchParams.set("asset_id", String(options.assetId));
+  }
+  if (options?.q && options.q.trim()) {
+    searchParams.set("q", options.q.trim());
+  }
+
+  const query = searchParams.toString();
+  const path = query
+    ? `/outbound/records/export?${query}`
+    : "/outbound/records/export";
+
+  const response = await fetch(`${API_PREFIX}${path}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: "text/csv",
+    },
+  });
+
+  if (!response.ok) {
+    let parsed: ApiResponseEnvelope<unknown> | null = null;
+    try {
+      parsed = (await response.json()) as ApiResponseEnvelope<unknown>;
+    } catch {
+      throw defaultErrorForStatus(response.status);
+    }
+
+    const error = parsed.error;
+    throw new AuthApiError(
+      error?.code ?? "REQUEST_FAILED",
+      error?.message ?? `请求失败（状态码 ${response.status}）。`,
+    );
+  }
+
+  const contentDisposition = response.headers.get("Content-Disposition") ?? "";
+  const match = contentDisposition.match(/filename=\"([^\"]+)\"/);
+  const fileName = match?.[1] ?? "outbound_records.csv";
+  const blob = await response.blob();
+  return { fileName, blob };
 }
 
 export async function createInboundOcrJob(
@@ -2664,6 +3248,24 @@ interface AdminCrudListResponseBody {
   };
 }
 
+interface AdminCrudWriteResponseBody {
+  readonly resource: AdminCrudResource;
+  readonly item?: Record<string, unknown>;
+  readonly id?: number;
+  readonly deleted?: boolean;
+  readonly status?: string;
+}
+
+interface RbacUiGuardRuleResponseBody {
+  readonly key: string;
+  readonly required_permissions: string[];
+}
+
+interface RbacUiGuardsResponseBody {
+  readonly routes: RbacUiGuardRuleResponseBody[];
+  readonly actions: RbacUiGuardRuleResponseBody[];
+}
+
 export interface AdminRbacPermission {
   readonly id: number;
   readonly resource: string;
@@ -2728,6 +3330,35 @@ export interface AdminCrudListResult {
   };
 }
 
+export interface AdminCrudWriteResult {
+  readonly resource: AdminCrudResource;
+  readonly item?: Record<string, unknown>;
+  readonly id?: number;
+  readonly deleted?: boolean;
+  readonly status?: string;
+}
+
+export interface RbacUiGuardRule {
+  readonly key: string;
+  readonly requiredPermissions: string[];
+}
+
+export interface RbacUiGuardsResult {
+  readonly routes: RbacUiGuardRule[];
+  readonly actions: RbacUiGuardRule[];
+}
+
+export interface ReplaceRbacUiGuardsInput {
+  readonly routes: Array<{
+    readonly key: string;
+    readonly requiredPermissions: string[];
+  }>;
+  readonly actions: Array<{
+    readonly key: string;
+    readonly requiredPermissions: string[];
+  }>;
+}
+
 function mapAdminRbacPermission(
   payload: AdminRbacPermissionResponseBody,
 ): AdminRbacPermission {
@@ -2748,6 +3379,13 @@ function mapAdminRbacRole(payload: AdminRbacRoleResponseBody): AdminRbacRole {
     description: payload.description,
     isSystem: payload.is_system,
     permissions: payload.permissions.map(mapAdminRbacPermission),
+  };
+}
+
+function mapRbacUiGuardRule(payload: RbacUiGuardRuleResponseBody): RbacUiGuardRule {
+  return {
+    key: payload.key,
+    requiredPermissions: payload.required_permissions,
   };
 }
 
@@ -2845,6 +3483,63 @@ export async function bindAdminRbacRolePermissions(
   };
 }
 
+export async function fetchRbacUiGuards(
+  accessToken: string,
+): Promise<RbacUiGuardsResult> {
+  assertToken(accessToken);
+  const envelope = await requestApi<RbacUiGuardsResponseBody>("/rbac/ui-guards", {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!envelope.data) {
+    throw new AuthApiError("INVALID_RESPONSE", "UI 权限映射响应数据为空。");
+  }
+
+  return {
+    routes: envelope.data.routes.map(mapRbacUiGuardRule),
+    actions: envelope.data.actions.map(mapRbacUiGuardRule),
+  };
+}
+
+export async function replaceAdminRbacUiGuards(
+  accessToken: string,
+  input: ReplaceRbacUiGuardsInput,
+): Promise<RbacUiGuardsResult> {
+  assertToken(accessToken);
+  const envelope = await requestApi<RbacUiGuardsResponseBody>(
+    "/admin/rbac/ui-guards",
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        routes: input.routes.map((item) => ({
+          key: item.key,
+          required_permissions: item.requiredPermissions,
+        })),
+        actions: input.actions.map((item) => ({
+          key: item.key,
+          required_permissions: item.requiredPermissions,
+        })),
+      }),
+    },
+  );
+
+  if (!envelope.data) {
+    throw new AuthApiError("INVALID_RESPONSE", "UI 权限映射保存响应数据为空。");
+  }
+
+  return {
+    routes: envelope.data.routes.map(mapRbacUiGuardRule),
+    actions: envelope.data.actions.map(mapRbacUiGuardRule),
+  };
+}
+
 export async function replaceAdminUserRoles(
   accessToken: string,
   userId: number,
@@ -2912,6 +3607,89 @@ export async function fetchAdminCrudResource(
       pageSize: envelope.data.meta.page_size,
       total: envelope.data.meta.total,
     },
+  };
+}
+
+export async function createAdminCrudRecord(
+  accessToken: string,
+  resource: AdminCrudResource,
+  payload: Record<string, unknown>,
+): Promise<AdminCrudWriteResult> {
+  assertToken(accessToken);
+  const envelope = await requestApi<AdminCrudWriteResponseBody>(`/admin/crud/${resource}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!envelope.data) {
+    throw new AuthApiError("INVALID_RESPONSE", "创建记录响应数据为空。");
+  }
+  return {
+    resource: envelope.data.resource,
+    item: envelope.data.item,
+    id: envelope.data.id,
+    deleted: envelope.data.deleted,
+    status: envelope.data.status,
+  };
+}
+
+export async function updateAdminCrudRecord(
+  accessToken: string,
+  resource: AdminCrudResource,
+  id: number,
+  payload: Record<string, unknown>,
+): Promise<AdminCrudWriteResult> {
+  assertToken(accessToken);
+  const envelope = await requestApi<AdminCrudWriteResponseBody>(
+    `/admin/crud/${resource}/${id}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!envelope.data) {
+    throw new AuthApiError("INVALID_RESPONSE", "更新记录响应数据为空。");
+  }
+  return {
+    resource: envelope.data.resource,
+    item: envelope.data.item,
+    id: envelope.data.id,
+    deleted: envelope.data.deleted,
+    status: envelope.data.status,
+  };
+}
+
+export async function deleteAdminCrudRecord(
+  accessToken: string,
+  resource: AdminCrudResource,
+  id: number,
+): Promise<AdminCrudWriteResult> {
+  assertToken(accessToken);
+  const envelope = await requestApi<AdminCrudWriteResponseBody>(
+    `/admin/crud/${resource}/${id}`,
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+  if (!envelope.data) {
+    throw new AuthApiError("INVALID_RESPONSE", "删除记录响应数据为空。");
+  }
+  return {
+    resource: envelope.data.resource,
+    item: envelope.data.item,
+    id: envelope.data.id,
+    deleted: envelope.data.deleted,
+    status: envelope.data.status,
   };
 }
 
