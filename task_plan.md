@@ -1,4 +1,89 @@
-﻿## Active Task (2026-02-12 出库记录列表文案与交互精简 - 收尾)
+## Active Task (2026-02-12 ???????????? - ??)
+### Goal
+? `/store` ???????????????????????????
+### Current Phase
+Phase A2-Closed?????
+
+### ????
+- [x] ????????planning-with-files?
+- [x] ?????????????????
+- [x] ?????????`npm --prefix frontend run typecheck`
+- [x] Docker ?????`powershell -ExecutionPolicy Bypass -File deploy/scripts/refresh-dev.ps1`
+- [x] ???????`/healthz=ok`?`/api/healthz={"status":"ok"}`
+## Active Task (2026-02-12 ????????????)
+### Goal
+? `/store` ???????????????????????????????
+### Current Phase
+Phase A1-Implementation?????
+
+### ??????
+- [x] ????????planning-with-files?
+- [x] ?????????????????
+- [ ] ??????
+- [ ] Docker ???????
+## Active Task (2026-02-12 ??????????? - ??)
+### Goal
+??????????????????????????????????
+### Current Phase
+Phase P2-Closed?????
+
+### ????
+- [x] ??????????planning-with-files?
+- [x] ? `useM02Cart` ????? `sessionStorage` ?? `localStorage`
+- [x] ??????????`sessionStorage -> localStorage`?
+- [x] ?????????`npm --prefix frontend run typecheck`
+- [x] Docker ?????`powershell -ExecutionPolicy Bypass -File deploy/scripts/refresh-dev.ps1`
+- [x] ???????`/healthz=ok`?`/api/healthz={"status":"ok"}`
+## Active Task (2026-02-12 ???????????)
+### Goal
+????????????????????????????????????????????????
+### Current Phase
+Phase P1-Implementation?????
+
+### ??????
+- [x] ??????????planning-with-files?
+- [ ] ? `useM02Cart` ????? `sessionStorage` ?? `localStorage`
+- [ ] ??????????`sessionStorage -> localStorage`?
+- [ ] ??????
+- [ ] Docker ???????
+﻿## Active Task (2026-02-12 全页面顶部 M 文案移除)
+### Goal
+移除各页面顶部横幅中以 `M` 开头的模块文案（如 `M02 商城`），保留页面标题与业务功能不变。
+### Current Phase
+Phase B3-Closed（已完成）
+
+### 本轮实施清单
+- [x] 记录需求与实施方案（planning-with-files）
+- [x] 批量移除 `className="app-shell__section-label"` 中 `Mxx ...` 文案标签
+- [x] 前端类型检查通过：`npm --prefix frontend run typecheck`
+- [x] Docker 刷新通过：`powershell -ExecutionPolicy Bypass -File deploy/scripts/refresh-dev.ps1`
+- [x] 健康检查通过：`/healthz=ok`、`/api/healthz={"status":"ok"}`
+## Active Task (2026-02-12 购物车按用户隔离 - 收尾)
+### Goal
+修复“不同用户共享同一购物车”的问题：购物车必须与登录用户绑定，每个用户只能看到自己的购物车内容。
+### Current Phase
+Phase U2-Closed（已完成）
+
+### 收尾清单
+- [x] 记录需求与实施方案（planning-with-files）
+- [x] 调整购物车存储键为用户维度（userId）
+- [x] 用户切换时自动加载对应购物车
+- [x] 更新调用方传入当前用户ID
+- [x] 前端类型检查通过：`npm --prefix frontend run typecheck`
+- [ ] Docker 刷新与健康检查
+## Active Task (2026-02-12 购物车缩略图尺寸下调 - 收尾)
+### Goal
+将 `/store/cart` 物料清单中的缩略图尺寸缩小到当前视觉效果的大约一半，提升表格可读性。
+### Current Phase
+Phase C2-Closed（已完成）
+
+### 收尾清单
+- [x] 记录需求与方案（planning-with-files）
+- [x] 仅调整 `/store/cart` 缩略图样式，不影响其他页面
+- [x] 前端类型检查通过：`npm --prefix frontend run typecheck`
+- [x] Docker 刷新通过：`deploy/scripts/refresh-dev.ps1`
+- [x] 健康检查通过：`/healthz=ok`、`/api/healthz={"status":"ok"}`
+## Active Task (2026-02-12 出库记录列表文案与交互精简 - 收尾)
 ### Goal
 将“出库记录列表”改为纯滚动查看：移除“向左/向右”按钮，并把表头统一改成中文，提升可读性。
 ### Current Phase
@@ -89,7 +174,7 @@ Phase U2-Closed（已完成）
 ### Goal
 在 `/outbound` 的“出库记录列表”区域增加清晰可用的横向滚动条，确保全字段表格在小屏和窄窗口下可完整浏览。
 ### Current Phase
-Phase U1-Implementation（进行中）
+Phase U2-Closed（已完成）
 
 ### 收尾清单
 - [x] 记录需求与方案到 planning-with-files 文档
@@ -279,3 +364,199 @@ Phase 3
 
 
 
+
+
+
+
+
+
+## Active Task (2026-02-12 申请详情缩略图与卡片标签优化)
+### Goal
+在 `/applications` 点击“查看详情”进入的申请详情页中，将“领用物料清单”的缩略图缩小一半，并删除两张卡片中的“表1/表2”标签文案。
+### Current Phase
+Phase D1-Implementation（进行中）
+
+### 本轮实施清单
+- [x] 记录需求与实施方案（planning-with-files）
+- [x] 删除申请详情页“表1/表2”标签
+- [x] 缩略图改为独立小尺寸样式（约缩小一半）
+- [ ] 前端类型检查
+- [ ] Docker 刷新与健康检查
+## Active Task (2026-02-12 申请详情缩略图与卡片标签优化 - 收尾)
+### Goal
+在 `/applications` 申请详情页中，缩小领用物料清单缩略图，并删除“表1/表2”标签。
+### Current Phase
+Phase D2-Closed（已完成）
+
+### 收尾清单
+- [x] 记录需求与实施方案（planning-with-files）
+- [x] 删除申请详情页“表1/表2”标签
+- [x] 缩略图改为独立小尺寸样式 `application-detail-cover (96x54)`
+- [x] 前端类型检查通过：`npm --prefix frontend run typecheck`
+- [x] Docker 刷新通过：`powershell -ExecutionPolicy Bypass -File deploy/scripts/refresh-dev.ps1`
+- [x] 健康检查通过：`/healthz=ok`、`/api/healthz={"status":"ok"}`
+
+## Active Task (2026-02-12 分类树审批人字段增强)
+### Goal
+在 `/materials` 的分类树管理中新增“审批领导设置”“管理员设置”两个可维护字段，并支持从人员名单下拉选择对应用户。
+### Current Phase
+Phase M1-Implementation（进行中）
+
+### 本轮实施清单
+- [x] 启用 planning-with-files 并记录目标/决策
+- [ ] 后端：分类模型与迁移新增 `leader_approver_user_id`、`admin_reviewer_user_id`
+- [ ] 后端：新增管理端分类树查询接口与审批人选项接口
+- [ ] 后端：分类创建/更新接口支持两个审批人字段
+- [ ] 前端：`/materials` 分类新增/编辑表单接入两个下拉字段
+- [ ] 前端：分类表格新增两列显示审批领导/管理员
+- [ ] 自动化验证：后端 pytest + 前端 typecheck
+- [ ] Docker 刷新与健康检查
+
+### 本轮错误记录
+- 只读探索阶段误读测试文件路径：`backend/tests/test_step16_m06_inventory.py` 不存在，正确文件为 `backend/tests/test_step14_m06_inbound_inventory.py`。
+- 只读探索阶段误读服务路径：`backend/app/services/rbac.py` 不存在，RBAC 逻辑位于 `backend/app/core/auth.py` 与 `backend/app/api/v1/routers/m08_admin.py`。
+
+## Active Task (2026-02-12 分类树审批人字段增强)
+### Goal
+在 `/materials` 的分类树管理中新增“审批领导设置”“管理员设置”两个可维护字段，并支持从人员名单下拉选择对应用户。
+### Current Phase
+Phase M2-Closed（已完成）
+
+### 本轮收尾清单
+- [x] 启用 planning-with-files 并记录目标/决策
+- [x] 后端：分类模型与迁移新增 `leader_approver_user_id`、`admin_reviewer_user_id`
+- [x] 后端：新增管理端分类树查询接口与审批人选项接口
+- [x] 后端：分类创建/更新接口支持两个审批人字段与角色校验
+- [x] 前端：`/materials` 分类新增/编辑表单接入两个下拉字段
+- [x] 前端：分类表格新增两列显示审批领导/管理员
+- [x] 自动化验证：`pytest backend/tests/test_step14_m06_inbound_inventory.py -q`
+- [x] 自动化验证：`pytest backend/tests/test_step11_m02_application.py -q`
+- [x] 自动化验证：`pytest backend/tests/test_step17_m08_admin.py -q`
+- [x] 自动化验证：`npm --prefix frontend run typecheck`
+- [x] Docker 刷新：`powershell -ExecutionPolicy Bypass -File deploy/scripts/refresh-dev.ps1`
+- [x] 健康检查：`/healthz=ok`、`/api/healthz={"status":"ok"}`
+
+### 本轮错误记录
+- PowerShell 使用 `&&` 串联命令导致解析失败；改为 `;` 后恢复。
+- 新增用例首次断言错误（422），按实际 `VALIDATION_ERROR=400` 修正。
+
+## Active Task (2026-02-12 17:40:29 权限治理深度优化)
+### Goal
+完善 /admin/rbac：权限目录中文化与可视化、用户角色分配改为账号下拉+角色多选下拉，保持现有基础权限粒度与 SUPER_ADMIN 权限边界不变。
+### Current Phase
+Phase R1-Implementation（进行中）
+### 本轮实施清单
+- [x] 启用 planning-with-files 并记录目标/阶段
+- [ ] 后端：权限字典幂等入库与权限目录扩展字段
+- [ ] 后端：新增 GET /api/v1/admin/users/{id}/roles
+- [ ] 前端：权限目录改表格+中文说明+页面/按钮引用
+- [ ] 前端：用户角色分配改为账号下拉+角色多选
+- [ ] 验证：pytest + frontend typecheck
+- [ ] Docker 刷新与健康检查
+
+### 本轮错误记录（2026-02-12 17:40:44）
+- 错误：PowerShell 向 `progress.md` 追加 here-string 时结束符缺失，触发 `TerminatorExpectedAtEndOfString`。
+- 处理：改为单引号 here-string（`@' ... '@`）并重试，已写入成功。
+
+## Active Task (2026-02-12 17:47:25 RBAC权限治理可视化优化)
+### Goal
+完成权限目录中文化与用户角色可视化分配：权限表格展示（含中文说明与页面/按钮引用），用户角色改为账号下拉+角色多选并支持自动预填。
+### Current Phase
+Phase P1-Implementation（进行中）
+### 本轮执行清单
+- [x] 按仓库规则启用 planning-with-files 并完成现状检查
+- [ ] 完成 admin-rbac 页面状态/交互改造
+- [ ] 完成权限目录与使用明细可视化表格
+- [ ] 完成用户角色可视化分配（账号下拉+角色多选+覆盖说明）
+- [ ] 前端 typecheck + 后端 pytest
+- [ ] Docker 刷新与健康检查
+
+### 错误记录 (2026-02-12 17:47:41)
+- 错误：PowerShell here-string 结束符缺失（TerminatorExpectedAtEndOfString），导致写入 progress.md 失败。
+- 处理：改用单引号 here-string（@' ... '@）并重新执行写入。
+
+## 收尾更新 (2026-02-12 17:54:14)
+### Current Phase
+Phase P2-Closed（已完成）
+### 验收结果
+- [x] `frontend/src/pages/admin-rbac-page.tsx` 完成权限目录中文化 + 用户角色可视化分配
+- [x] `frontend/src/styles/index.css` 完成配套样式（权限使用明细、角色多选）
+- [x] `npm --prefix frontend run typecheck` 通过
+- [x] `pytest -q backend/tests/test_step17_m08_admin.py` 通过（3 passed）
+- [x] Docker 刷新通过：`powershell -ExecutionPolicy Bypass -File deploy/scripts/refresh-dev.ps1`
+- [x] 健康检查通过：`/healthz=ok`、`/api/healthz={"status":"ok"}`
+
+## Active Task (2026-02-12 18:06:07 修复RBAC页面400错误)
+### Goal
+修复 `admin/rbac` 页面请求返回 400 的问题，恢复权限治理页正常加载。
+### Current Phase
+Phase E1-Implementation（进行中）
+### 本轮执行清单
+- [x] 定位失败请求根因
+- [ ] 修复前端非法分页参数
+- [ ] 前端 typecheck 验证
+- [ ] Docker 刷新与健康检查
+
+## 收尾更新 (2026-02-12 18:11:06)
+### Current Phase
+Phase E2-Closed（已完成）
+### 验收结果
+- [x] 修复 `admin-rbac-page.tsx` 请求越界参数：`pageSize 500 -> 100`
+- [x] `npm --prefix frontend run typecheck` 通过
+- [x] Docker 刷新通过：`powershell -ExecutionPolicy Bypass -File deploy/scripts/refresh-dev.ps1`
+- [x] 健康检查通过：`/healthz=ok`、`/api/healthz={"status":"ok"}`
+
+## Active Task (2026-02-12 18:14:29 修复用户角色可视化多选不可用)
+### Goal
+修复 `/admin/rbac` 页面“可视化替换用户-角色分配”多选体验问题，改为可直接点击的复选框多选。
+### Current Phase
+Phase M1-Implementation（进行中）
+### 本轮执行清单
+- [x] 记录需求与根因假设
+- [ ] 将角色多选控件从 `select[multiple]` 改为复选框列表
+- [ ] 前端 typecheck 验证
+- [ ] Docker 刷新与健康检查
+
+### 错误记录 (2026-02-12 18:20:36)
+- 错误：执行 `deploy/scripts/refresh-dev.ps1` 超时（工具超时退出码 124）。
+- 处理：先检查容器/健康状态，再以更长超时时间重试刷新。
+
+## 收尾更新 (2026-02-12 18:26:42)
+### Current Phase
+Phase M2-Closed（已完成）
+### 验收结果
+- [x] 用户角色多选改为可点击复选框列表，不再依赖 Ctrl/Shift
+- [x] 前端 `typecheck` 通过
+- [x] Docker 刷新成功（第二次重试通过）
+- [x] 健康检查通过：`/healthz=ok`、`/api/healthz={"status":"ok"}`
+### 错误处理闭环
+- 第一次 Docker 刷新因超时中断（exit 124），已记录并采用延长超时重试，最终刷新成功。
+
+## Active Task (2026-02-12 申请回退购物车 + 出库执行可见性修复)
+### Goal
+1. 在“我的申请”中为领导驳回单提供“回退到购物车”操作，支持修改后重新提交。
+2. 修复“管理员审批通过单在出库执行不可见”的流程可见性问题，避免误判为权限异常。
+### Current Phase
+Phase R1-Implementation（进行中）
+### 实施清单
+- [x] 使用 planning-with-files 记录本轮目标与发现
+- [ ] 实现“领导驳回单回退到购物车”
+- [ ] 增强出库队列展示 ADMIN_APPROVED（待分配）状态并前端提示
+- [ ] 前后端类型检查与相关测试
+- [ ] Docker 刷新与健康检查
+
+## Active Task (2026-02-12 申请回退购物车 + 出库执行可见性修复 - 收尾)
+### Goal
+1. 领导驳回申请可回退到购物车并二次提交。
+2. 管理员审批通过但未分配资产的申请在出库执行中可见并有明确提示。
+### Current Phase
+Phase R2-Closed（已完成）
+### 收尾清单
+- [x] 我的申请页增加“回退到购物车”（仅 LEADER_REJECTED）
+- [x] 申请详情补充回填购物车所需 SKU 字段（含 available_stock）
+- [x] 出库队列展示 `READY_OUTBOUND` + `ADMIN_APPROVED`，并返回状态字段
+- [x] 出库执行页展示状态并阻止对未分配资产单据执行出库操作
+- [x] 前端类型检查通过：`npm --prefix frontend run typecheck`
+- [x] 后端测试通过：`pytest backend/tests/test_step12_m03_approval.py backend/tests/test_step13_m04_m05.py`
+- [x] Docker 刷新通过：`powershell -ExecutionPolicy Bypass -File deploy/scripts/refresh-dev.ps1`
+- [x] 健康检查通过：`/healthz=ok`，`/api/healthz={"status":"ok"}`

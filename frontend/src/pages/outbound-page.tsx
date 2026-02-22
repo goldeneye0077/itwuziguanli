@@ -15,7 +15,7 @@ import {
 } from "../api";
 import { hasActionPermission } from "../permissions";
 import { useAuthSession } from "../stores";
-import { toDateLabel } from "./page-helpers";
+import { toApplicationStatusLabel, toDateLabel } from "./page-helpers";
 
 const RECORD_PAGE_SIZE = 20;
 
@@ -228,6 +228,15 @@ export function OutboundPage(): JSX.Element {
       setErrorMessage("请输入取件核验值。");
       return;
     }
+    if (pickupVerifyType === "APPLICATION_ID") {
+      const matched = pickupQueue.find(
+        (item) => String(item.applicationId) === normalizedValue,
+      );
+      if (matched && matched.status !== "READY_OUTBOUND") {
+        setErrorMessage("该申请单尚未完成资产分配，请先到管理员审批页完成分配。");
+        return;
+      }
+    }
 
     setIsConfirmingPickup(true);
     setErrorMessage(null);
@@ -263,6 +272,11 @@ export function OutboundPage(): JSX.Element {
     }
     if (!shipCarrier.trim() || !shipTrackingNo.trim()) {
       setErrorMessage("承运商和运单号不能为空。");
+      return;
+    }
+    const matched = expressQueue.find((item) => item.applicationId === parsedApplicationId);
+    if (matched && matched.status !== "READY_OUTBOUND") {
+      setErrorMessage("该申请单尚未完成资产分配，请先到管理员审批页完成分配。");
       return;
     }
 
@@ -345,7 +359,6 @@ export function OutboundPage(): JSX.Element {
     <div className="page-stack">
       <section className="app-shell__panel" aria-label="出库执行说明">
         <div className="page-panel-head">
-          <p className="app-shell__section-label">M05 出库</p>
           <h2 className="app-shell__panel-title">出库执行工作台</h2>
           <p className="app-shell__panel-copy">查询自提/快递队列，并可审计出库记录与导出。</p>
         </div>
@@ -421,13 +434,18 @@ export function OutboundPage(): JSX.Element {
                       #{item.applicationId} · 申请人 {item.applicantUserId}
                     </p>
                     <p className="dashboard-list__meta">
-                      取件码：{item.pickupCode} · {toDateLabel(item.createdAt)}
+                      状态：{toApplicationStatusLabel(item.status)} · 取件码：{item.pickupCode} ·{" "}
+                      {toDateLabel(item.createdAt)}
                     </p>
                     <p className="dashboard-list__content">申请条目：{formatItemSummary(item.items)}</p>
+                    {item.status !== "READY_OUTBOUND" ? (
+                      <p className="app-shell__card-copy">待分配资产，请先在管理员审批页完成资产分配。</p>
+                    ) : null}
                     <div className="store-action-row page-actions">
                       <button
                         className="app-shell__header-action"
                         type="button"
+                        disabled={item.status !== "READY_OUTBOUND"}
                         onClick={() => {
                           setPickupVerifyType("APPLICATION_ID");
                           setPickupValue(String(item.applicationId));
@@ -438,6 +456,7 @@ export function OutboundPage(): JSX.Element {
                       <button
                         className="app-shell__header-action"
                         type="button"
+                        disabled={item.status !== "READY_OUTBOUND"}
                         onClick={() => {
                           setPickupVerifyType("CODE");
                           setPickupValue(item.pickupCode);
@@ -519,11 +538,17 @@ export function OutboundPage(): JSX.Element {
                     <p className="dashboard-list__title">
                       #{item.applicationId} · 申请人 {item.applicantUserId}
                     </p>
-                    <p className="dashboard-list__meta">{toDateLabel(item.createdAt)}</p>
+                    <p className="dashboard-list__meta">
+                      状态：{toApplicationStatusLabel(item.status)} · {toDateLabel(item.createdAt)}
+                    </p>
                     <p className="dashboard-list__content">申请条目：{formatItemSummary(item.items)}</p>
+                    {item.status !== "READY_OUTBOUND" ? (
+                      <p className="app-shell__card-copy">待分配资产，请先在管理员审批页完成资产分配。</p>
+                    ) : null}
                     <button
                       className="app-shell__header-action"
                       type="button"
+                      disabled={item.status !== "READY_OUTBOUND"}
                       onClick={() => setShipApplicationId(String(item.applicationId))}
                     >
                       使用申请单编号
@@ -913,6 +938,7 @@ export function OutboundPage(): JSX.Element {
     </div>
   );
 }
+
 
 
 

@@ -452,6 +452,12 @@ def test_admin_approve_reject_assign_and_detail_payload() -> None:
     assert detail_payload["success"] is True
     assert detail_payload["data"]["application"]["id"] == 102
     assert detail_payload["data"]["application"]["status"] == "READY_OUTBOUND"
+    first_item = detail_payload["data"]["application"]["items"][0]
+    assert first_item["category_id"] == 1
+    assert first_item["reference_price"] == "8999.00"
+    assert first_item["stock_mode"] == "SERIALIZED"
+    assert first_item["safety_stock_threshold"] == 1
+    assert first_item["available_stock"] >= 0
     assert len(detail_payload["data"]["approval_history"]) >= 2
     assert detail_payload["data"]["assigned_assets"][0]["asset_id"] == 5
 

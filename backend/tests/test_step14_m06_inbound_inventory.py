@@ -48,6 +48,14 @@ def _seed_data(session: Session) -> None:
                 email="m06.admin@example.com",
                 password_hash=hash_password("User12345"),
             ),
+            SysUser(
+                id=3,
+                employee_no="U0003",
+                name="M06 Leader",
+                department_id=1,
+                email="m06.leader@example.com",
+                password_hash=hash_password("User12345"),
+            ),
         ]
     )
 
@@ -55,6 +63,7 @@ def _seed_data(session: Session) -> None:
         [
             RbacRole(id=1, role_key="USER", role_name="User", is_system=True),
             RbacRole(id=2, role_key="ADMIN", role_name="Admin", is_system=True),
+            RbacRole(id=3, role_key="LEADER", role_name="Leader", is_system=True),
         ]
     )
     session.add_all(
@@ -83,6 +92,7 @@ def _seed_data(session: Session) -> None:
         [
             RbacUserRole(id=1, user_id=1, role_id=1, created_at=now),
             RbacUserRole(id=2, user_id=2, role_id=2, created_at=now),
+            RbacUserRole(id=3, user_id=3, role_id=3, created_at=now),
         ]
     )
 
@@ -396,6 +406,95 @@ def test_m06_admin_sku_asset_create_and_duplicate_sn() -> None:
         duplicate_payload = duplicate_assets.json()
         assert duplicate_payload["success"] is False
         assert duplicate_payload["error"]["code"] == "DUPLICATE_SN"
+
+
+def test_m06_admin_category_approver_fields_and_options() -> None:
+    client, _ = _build_client()
+
+    with client:
+        admin_token = _login_and_get_access_token(client, "U0002")
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        options = client.get("/api/v1/admin/categories/approver-options", headers=headers)
+        assert options.status_code == 200
+        options_payload = options.json()
+        assert options_payload["success"] is True
+        leader_ids = [item["id"] for item in options_payload["data"]["leaders"]]
+        admin_ids = [item["id"] for item in options_payload["data"]["admins"]]
+        assert 3 in leader_ids
+        assert 2 in admin_ids
+
+        invalid_category = client.post(
+            "/api/v1/admin/categories",
+            headers=headers,
+            json={
+                "name": "InvalidCategory",
+                "parent_id": None,
+                "leader_approver_user_id": 2,
+                "admin_reviewer_user_id": 2,
+            },
+        )
+        assert invalid_category.status_code == 400
+        invalid_payload = invalid_category.json()
+        assert invalid_payload["success"] is False
+        assert invalid_payload["error"]["code"] == "VALIDATION_ERROR"
+
+        created = client.post(
+            "/api/v1/admin/categories",
+            headers=headers,
+            json={
+                "name": "Printer Consumables",
+                "parent_id": 1,
+                "leader_approver_user_id": 3,
+                "admin_reviewer_user_id": 2,
+            },
+        )
+        assert created.status_code == 200
+        created_payload = created.json()
+        assert created_payload["success"] is True
+        category_id = created_payload["data"]["id"]
+        assert created_payload["data"]["leader_approver_user_id"] == 3
+        assert created_payload["data"]["admin_reviewer_user_id"] == 2
+        assert created_payload["data"]["leader_approver_name"] == "M06 Leader"
+        assert created_payload["data"]["admin_reviewer_name"] == "M06 Admin"
+
+        updated = client.put(
+            f"/api/v1/admin/categories/{category_id}",
+            headers=headers,
+            json={
+                "name": "Printer Consumables Updated",
+                "parent_id": 1,
+                "leader_approver_user_id": 3,
+                "admin_reviewer_user_id": None,
+            },
+        )
+        assert updated.status_code == 200
+        updated_payload = updated.json()
+        assert updated_payload["success"] is True
+        assert updated_payload["data"]["leader_approver_user_id"] == 3
+        assert updated_payload["data"]["admin_reviewer_user_id"] is None
+
+        tree = client.get("/api/v1/admin/categories/tree", headers=headers)
+        assert tree.status_code == 200
+        tree_payload = tree.json()
+        assert tree_payload["success"] is True
+
+        created_node = None
+        for node in tree_payload["data"]:
+            if node["id"] == category_id:
+                created_node = node
+                break
+            for child in node.get("children", []):
+                if child["id"] == category_id:
+                    created_node = child
+                    break
+            if created_node is not None:
+                break
+
+        assert created_node is not None
+        assert created_node["leader_approver_user_id"] == 3
+        assert created_node["leader_approver_name"] == "M06 Leader"
+        assert created_node["admin_reviewer_user_id"] is None
 
 
 def test_m06_inventory_summary_aggregation() -> None:

@@ -3,8 +3,10 @@
 import {
   bindAdminRbacRolePermissions,
   createAdminRbacRole,
+  fetchAdminCrudResource,
   fetchAdminRbacPermissions,
   fetchAdminRbacRoles,
+  fetchAdminUserRoles,
   fetchRbacUiGuards,
   replaceAdminRbacUiGuards,
   replaceAdminUserRoles,
@@ -14,11 +16,25 @@ import {
 import { applyPermissionMappingConfig, hasActionPermission } from "../permissions";
 import { BLUEPRINT_ROUTE_META } from "../routes/blueprint-routes";
 import { useAuthSession } from "../stores";
-import { parsePositiveInteger, toErrorMessage, toRoleListLabel } from "./page-helpers";
+import { toErrorMessage, toRoleListLabel } from "./page-helpers";
 
 interface UiGuardEditorRow {
   readonly key: string;
   readonly requiredPermissionsText: string;
+}
+
+interface RbacUserOption {
+  readonly id: number;
+  readonly employeeNo: string;
+  readonly name: string;
+  readonly departmentName: string;
+}
+
+interface PermissionUsageRow {
+  readonly key: string;
+  readonly label: string;
+  readonly permissionCode: string;
+  readonly permissionName: string;
 }
 
 const ROUTE_LABELS: Record<string, string> = {
@@ -39,6 +55,8 @@ const ROUTE_LABELS: Record<string, string> = {
 const ACTION_LABELS: Record<string, string> = {
   "rbac.save-role-permissions": "保存角色权限绑定",
   "crud.save-record": "保存数据记录",
+  "outbound.fetch-records": "查询出库记录",
+  "outbound.export-records": "导出出库记录",
   "inbound.confirm-inbound": "确认物料入库",
   "inbound.print-tag": "打印标签",
   "inventory.fetch-skus": "查询物料",
@@ -222,14 +240,38 @@ function parseRoleBindingsEditor(
     }));
 }
 
-function parseRoleList(value: string): string[] {
+function normalizeRoleKeys(values: readonly string[]): string[] {
   const roleSet = new Set(
-    value
-      .split(/[\n,]/)
+    values
       .map((item) => item.trim().toUpperCase())
       .filter((item) => item.length > 0),
   );
   return Array.from(roleSet).sort((left, right) => left.localeCompare(right));
+}
+
+function mapCrudUserToOption(item: Record<string, unknown>): RbacUserOption | null {
+  const rawId = item.id;
+  const id = typeof rawId === "number" ? rawId : Number(rawId);
+  if (!Number.isInteger(id) || id <= 0) {
+    return null;
+  }
+  const employeeNo = String(item.employee_no ?? "").trim();
+  const name = String(item.name ?? "").trim();
+  const departmentName = String(item.department_name ?? "").trim();
+  if (!employeeNo || !name) {
+    return null;
+  }
+  return {
+    id,
+    employeeNo,
+    name,
+    departmentName,
+  };
+}
+
+function toUserOptionLabel(user: RbacUserOption): string {
+  const department = user.departmentName || "未设置部门";
+  return `${user.employeeNo} - ${user.name}（${department}）`;
 }
 
 function toRouteGuardLabel(key: string): string {
@@ -258,11 +300,13 @@ export function AdminRbacPage(): JSX.Element {
   const [permissions, setPermissions] = useState<AdminRbacPermission[]>([]);
   const [routeGuardRows, setRouteGuardRows] = useState<UiGuardEditorRow[]>([]);
   const [actionGuardRows, setActionGuardRows] = useState<UiGuardEditorRow[]>([]);
+  const [userOptions, setUserOptions] = useState<RbacUserOption[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isCreatingRole, setIsCreatingRole] = useState(false);
   const [isSavingBindings, setIsSavingBindings] = useState(false);
   const [isSavingUiGuards, setIsSavingUiGuards] = useState(false);
   const [isReplacingUserRoles, setIsReplacingUserRoles] = useState(false);
+  const [isLoadingUserRoles, setIsLoadingUserRoles] = useState(false);
 
   const [selectedRoleKey, setSelectedRoleKey] = useState("");
   const [newRoleKey, setNewRoleKey] = useState("");
@@ -270,8 +314,8 @@ export function AdminRbacPage(): JSX.Element {
   const [newRoleDescription, setNewRoleDescription] = useState("");
 
   const [bindingsEditor, setBindingsEditor] = useState("");
-  const [targetUserId, setTargetUserId] = useState("");
-  const [targetRolesEditor, setTargetRolesEditor] = useState("USER");
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const [selectedUserRoleKeys, setSelectedUserRoleKeys] = useState<string[]>([]);
   const [selectedPermissionCodes, setSelectedPermissionCodes] = useState<string[]>([]);
 
   const [newRouteKey, setNewRouteKey] = useState("");
@@ -300,6 +344,36 @@ export function AdminRbacPage(): JSX.Element {
       }));
   }, [permissions]);
 
+  const routePermissionUsageRows = useMemo(() => {
+    const rows: PermissionUsageRow[] = [];
+    for (const permission of permissions) {
+      for (const routePath of permission.routeRefs) {
+        rows.push({
+          key: `${routePath}:${permission.code}`,
+          label: toRouteGuardLabel(routePath),
+          permissionCode: permission.code,
+          permissionName: permission.zhName,
+        });
+      }
+    }
+    return rows.sort((left, right) => left.key.localeCompare(right.key));
+  }, [permissions]);
+
+  const actionPermissionUsageRows = useMemo(() => {
+    const rows: PermissionUsageRow[] = [];
+    for (const permission of permissions) {
+      for (const actionId of permission.actionRefs) {
+        rows.push({
+          key: `${actionId}:${permission.code}`,
+          label: toActionGuardLabel(actionId),
+          permissionCode: permission.code,
+          permissionName: permission.zhName,
+        });
+      }
+    }
+    return rows.sort((left, right) => left.key.localeCompare(right.key));
+  }, [permissions]);
+
   const token = accessToken ?? "";
 
   const loadRbacData = useCallback(async (nextSelectedRoleKey?: string): Promise<void> => {
@@ -309,16 +383,25 @@ export function AdminRbacPage(): JSX.Element {
     setIsLoadingData(true);
     setErrorMessage(null);
     try {
-      const [nextRoles, nextPermissions, nextUiGuards] = await Promise.all([
+      const [nextRoles, nextPermissions, nextUiGuards, usersResult] = await Promise.all([
         fetchAdminRbacRoles(accessToken),
         fetchAdminRbacPermissions(accessToken),
         fetchRbacUiGuards(accessToken),
+        fetchAdminCrudResource(accessToken, "users", {
+          page: 1,
+          pageSize: 100,
+        }),
       ]);
 
       setRoles(nextRoles);
       setPermissions(nextPermissions);
       setRouteGuardRows(toGuardRows(nextUiGuards.routes));
       setActionGuardRows(toGuardRows(nextUiGuards.actions));
+      const nextUserOptions = usersResult.items
+        .map(mapCrudUserToOption)
+        .filter((item): item is RbacUserOption => item !== null)
+        .sort((left, right) => left.employeeNo.localeCompare(right.employeeNo));
+      setUserOptions(nextUserOptions);
       applyPermissionMappingConfig({
         routes: nextUiGuards.routes.map((item) => ({
           routePath: item.key,
@@ -341,21 +424,67 @@ export function AdminRbacPage(): JSX.Element {
       const role = nextRoles.find((item) => item.key === preservedRoleKey) ?? null;
       setBindingsEditor(formatRoleBindings(role));
       setSelectedPermissionCodes(roleToPermissionCodes(role));
+
+      const preservedUserId =
+        selectedUserId && nextUserOptions.some((item) => String(item.id) === selectedUserId)
+          ? selectedUserId
+          : nextUserOptions.length
+            ? String(nextUserOptions[0].id)
+            : "";
+      setSelectedUserId(preservedUserId);
     } catch (error) {
       setErrorMessage(toErrorMessage(error, "加载角色权限数据失败。"));
     } finally {
       setIsLoadingData(false);
     }
-  }, [accessToken, selectedRoleKey]);
+  }, [accessToken, selectedRoleKey, selectedUserId]);
 
   useEffect(() => {
     void loadRbacData();
   }, [loadRbacData]);
 
+  useEffect(() => {
+    if (!accessToken || !selectedUserId) {
+      setSelectedUserRoleKeys([]);
+      return;
+    }
+
+    let canceled = false;
+    const userId = Number(selectedUserId);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      setSelectedUserRoleKeys([]);
+      return;
+    }
+
+    setIsLoadingUserRoles(true);
+    setErrorMessage(null);
+    void fetchAdminUserRoles(accessToken, userId)
+      .then((result) => {
+        if (canceled) {
+          return;
+        }
+        setSelectedUserRoleKeys(normalizeRoleKeys(result.roles));
+      })
+      .catch((error: unknown) => {
+        if (canceled) {
+          return;
+        }
+        setErrorMessage(toErrorMessage(error, "加载用户角色失败。"));
+      })
+      .finally(() => {
+        if (!canceled) {
+          setIsLoadingUserRoles(false);
+        }
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [accessToken, selectedUserId]);
+
   if (!accessToken) {
     return (
       <section className="forbidden-state" role="alert">
-        <p className="app-shell__section-label">M08 角色权限治理</p>
         <h2 className="forbidden-state__title">会话令牌缺失，请重新登录。</h2>
       </section>
     );
@@ -378,6 +507,19 @@ export function AdminRbacPage(): JSX.Element {
       }
       return Array.from(set).sort((left, right) => left.localeCompare(right));
     });
+  }
+
+  function toggleSelectedUserRole(roleKey: string): void {
+    setSelectedUserRoleKeys((previous) => {
+      const set = new Set(previous);
+      if (set.has(roleKey)) {
+        set.delete(roleKey);
+      } else {
+        set.add(roleKey);
+      }
+      return normalizeRoleKeys(Array.from(set));
+    });
+    setSuccessMessage(null);
   }
 
   async function handleCreateRole(): Promise<void> {
@@ -571,21 +713,22 @@ export function AdminRbacPage(): JSX.Element {
   }
 
   async function handleReplaceUserRoles(): Promise<void> {
-    const parsedUserId = parsePositiveInteger(targetUserId);
-    if (!parsedUserId) {
-      setErrorMessage("目标用户编号必须为正整数。");
+    const parsedUserId = Number(selectedUserId);
+    if (!Number.isInteger(parsedUserId) || parsedUserId <= 0) {
+      setErrorMessage("请先选择目标用户账号。");
       return;
     }
 
-    const rolesToApply = parseRoleList(targetRolesEditor);
+    const rolesToApply = normalizeRoleKeys(selectedUserRoleKeys);
     setIsReplacingUserRoles(true);
     setErrorMessage(null);
     setSuccessMessage(null);
     try {
       const result = await replaceAdminUserRoles(token, parsedUserId, rolesToApply);
       const roleLabel = result.roles.length ? result.roles.join(", ") : "（无）";
+      setSelectedUserRoleKeys(result.roles);
       setSuccessMessage(
-        `用户 #${result.userId} 角色已替换为：${roleLabel}。`,
+        `用户角色覆盖完成：${roleLabel}。`,
       );
     } catch (error) {
       setErrorMessage(toErrorMessage(error, "替换用户角色失败。"));
@@ -598,7 +741,6 @@ export function AdminRbacPage(): JSX.Element {
     <div className="page-stack">
       <section className="app-shell__panel" aria-label="角色权限治理说明">
         <div className="page-panel-head">
-          <p className="app-shell__section-label">M08 角色权限治理</p>
           <h2 className="app-shell__panel-title">角色与权限治理控制台</h2>
           <p className="app-shell__panel-copy">
             所需角色：<strong>{toRoleListLabel(["SUPER_ADMIN"])}</strong>。当前角色：
@@ -691,22 +833,122 @@ export function AdminRbacPage(): JSX.Element {
         <article className="app-shell__card">
           <div className="page-card-head">
             <p className="app-shell__section-label">权限目录</p>
-            <h3 className="app-shell__card-title">已有权限项</h3>
+            <h3 className="app-shell__card-title">系统权限字典（含中文说明）</h3>
           </div>
           {isLoadingData ? (
             <p className="app-shell__card-copy">正在加载权限目录...</p>
           ) : !permissions.length ? (
             <p className="app-shell__card-copy">当前暂无权限项。</p>
           ) : (
-            <ul className="admin-permission-list">
-              {permissions.map((permission) => (
-                <li key={permission.id}>
-                  <code className="admin-permission-chip">
-                    {permission.resource}:{permission.action}
-                  </code>
-                </li>
-              ))}
-            </ul>
+            <div className="admin-form-grid page-form-grid">
+              <div className="page-table-wrap admin-field-wide">
+                <table className="analytics-table">
+                  <caption className="visually-hidden">
+                    权限目录表，包含权限码、中文说明与映射引用统计
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">权限码</th>
+                      <th scope="col">中文名称</th>
+                      <th scope="col">中文说明</th>
+                      <th scope="col">资源</th>
+                      <th scope="col">动作</th>
+                      <th scope="col">页面引用数</th>
+                      <th scope="col">按钮引用数</th>
+                      <th scope="col">是否内置</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {permissions.map((permission) => (
+                      <tr key={permission.id}>
+                        <td>
+                          <code className="admin-permission-chip">{permission.code}</code>
+                        </td>
+                        <td>{permission.zhName}</td>
+                        <td>{permission.zhDescription}</td>
+                        <td>{permission.resource}</td>
+                        <td>{permission.action}</td>
+                        <td>{permission.routeRefs.length}</td>
+                        <td>{permission.actionRefs.length}</td>
+                        <td>{permission.isBuiltin ? "是" : "否"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="admin-permission-usage-grid admin-field-wide">
+                <section className="admin-permission-usage-panel">
+                  <h4 className="app-shell__card-title">页面权限使用明细</h4>
+                  <div className="page-table-wrap">
+                    <table className="analytics-table">
+                      <caption className="visually-hidden">
+                        页面到权限码使用明细
+                      </caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">页面</th>
+                          <th scope="col">权限码</th>
+                          <th scope="col">中文名称</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {routePermissionUsageRows.length ? (
+                          routePermissionUsageRows.map((row) => (
+                            <tr key={row.key}>
+                              <td>{row.label}</td>
+                              <td>
+                                <code className="admin-permission-chip">{row.permissionCode}</code>
+                              </td>
+                              <td>{row.permissionName}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={3}>暂无页面权限映射引用。</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <section className="admin-permission-usage-panel">
+                  <h4 className="app-shell__card-title">按钮权限使用明细</h4>
+                  <div className="page-table-wrap">
+                    <table className="analytics-table">
+                      <caption className="visually-hidden">
+                        按钮到权限码使用明细
+                      </caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">按钮</th>
+                          <th scope="col">权限码</th>
+                          <th scope="col">中文名称</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {actionPermissionUsageRows.length ? (
+                          actionPermissionUsageRows.map((row) => (
+                            <tr key={row.key}>
+                              <td>{row.label}</td>
+                              <td>
+                                <code className="admin-permission-chip">{row.permissionCode}</code>
+                              </td>
+                              <td>{row.permissionName}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={3}>暂无按钮权限映射引用。</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              </div>
+            </div>
           )}
         </article>
 
@@ -823,7 +1065,7 @@ export function AdminRbacPage(): JSX.Element {
 
         <article className="app-shell__card">
           <div className="page-card-head">
-            <p className="app-shell__section-label">角色绑定（文本）</p>
+            <p className="app-shell__section-label">角色绑定（高级文本模式）</p>
             <h3 className="app-shell__card-title">以确定性方式替换角色-权限绑定</h3>
           </div>
           <div className="admin-form-grid page-form-grid">
@@ -853,6 +1095,9 @@ export function AdminRbacPage(): JSX.Element {
               />
             </label>
 
+            <p className="app-shell__card-copy">
+              建议优先使用上方“角色赋权（可视化）”，仅在批量粘贴权限码时使用本模式。
+            </p>
             <p className="app-shell__card-copy">
               格式：<code>RESOURCE=ACTION1,ACTION2</code>。编辑器为空将清空所选角色的全部绑定。
             </p>
@@ -1137,35 +1382,66 @@ export function AdminRbacPage(): JSX.Element {
         <article className="app-shell__card">
           <div className="page-card-head">
             <p className="app-shell__section-label">用户角色设置</p>
-            <h3 className="app-shell__card-title">替换用户-角色分配</h3>
+            <h3 className="app-shell__card-title">可视化替换用户-角色分配</h3>
           </div>
           <div className="admin-form-grid page-form-grid">
             <label className="store-field">
-              用户编号
-              <input
-                value={targetUserId}
-                onChange={(event) => setTargetUserId(event.target.value)}
-                placeholder="例如：3"
-              />
+              用户账号
+              <select
+                value={selectedUserId}
+                disabled={isLoadingData || !userOptions.length}
+                onChange={(event) => {
+                  setSelectedUserId(event.target.value);
+                  setSuccessMessage(null);
+                }}
+              >
+                {!userOptions.length ? <option value="">暂无可选用户</option> : null}
+                {userOptions.map((user) => (
+                  <option key={user.id} value={String(user.id)}>
+                    {toUserOptionLabel(user)}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="store-field admin-field-wide">
-              角色列表（逗号/换行分隔）
-              <textarea
-                rows={3}
-                value={targetRolesEditor}
-                onChange={(event) => setTargetRolesEditor(event.target.value)}
-                placeholder="例如：USER,AUDITOR"
-              />
+              角色列表（多选）
+              <div className="admin-role-checkbox-grid" role="group" aria-label="角色多选列表">
+                {roles.length ? (
+                  roles.map((role) => {
+                    const checked = selectedUserRoleKeys.includes(role.key);
+                    return (
+                      <label key={role.id} className="admin-role-checkbox-item">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={!canManageRbac || isLoadingUserRoles}
+                          onChange={() => toggleSelectedUserRole(role.key)}
+                        />
+                        <span>{role.key} - {role.name}</span>
+                      </label>
+                    );
+                  })
+                ) : (
+                  <p className="app-shell__card-copy">暂无可选角色。</p>
+                )}
+              </div>
             </label>
+            <p className="app-shell__card-copy admin-field-wide">
+              说明：保存将覆盖该用户当前全部角色。当前加载状态：
+              {isLoadingUserRoles ? "正在读取该用户角色..." : "已完成"}
+            </p>
+            <p className="app-shell__card-copy admin-field-wide">
+              建议先选择用户账号，再勾选目标角色后保存。
+            </p>
             <button
               className="auth-submit"
               type="button"
-              disabled={isReplacingUserRoles || !canManageRbac}
+              disabled={isReplacingUserRoles || !canManageRbac || !selectedUserId}
               onClick={() => {
                 void handleReplaceUserRoles();
               }}
             >
-              {isReplacingUserRoles ? "保存中..." : "替换用户角色"}
+              {isReplacingUserRoles ? "保存中..." : "保存用户角色覆盖"}
             </button>
           </div>
         </article>
@@ -1173,3 +1449,4 @@ export function AdminRbacPage(): JSX.Element {
     </div>
   );
 }
+

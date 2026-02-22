@@ -9,7 +9,14 @@ export interface CartEntry {
 
 export type CartState = Record<number, CartEntry>;
 
-const CART_STORAGE_KEY = "pgc-m02-cart-v1";
+const CART_STORAGE_KEY_PREFIX = "pgc-m02-cart-v1";
+
+function buildCartStorageKey(userId: number | null | undefined): string {
+  if (typeof userId === "number" && Number.isFinite(userId) && userId > 0) {
+    return `${CART_STORAGE_KEY_PREFIX}:${Math.trunc(userId)}`;
+  }
+  return `${CART_STORAGE_KEY_PREFIX}:anonymous`;
+}
 
 function isSkuItem(value: unknown): value is SkuItem {
   if (!value || typeof value !== "object") {
@@ -75,44 +82,65 @@ function normalizeCart(candidate: unknown): CartState {
   return cart;
 }
 
-function readCartFromStorage(): CartState {
+function readCartFromStorage(storageKey: string): CartState {
   if (typeof window === "undefined") {
     return {};
   }
 
-  const raw = window.sessionStorage.getItem(CART_STORAGE_KEY);
-  if (!raw) {
+  const rawFromLocal = window.localStorage.getItem(storageKey);
+  if (rawFromLocal) {
+    try {
+      return normalizeCart(JSON.parse(rawFromLocal));
+    } catch {
+      return {};
+    }
+  }
+
+  const rawFromSession = window.sessionStorage.getItem(storageKey);
+  if (!rawFromSession) {
     return {};
   }
 
   try {
-    return normalizeCart(JSON.parse(raw));
+    const normalized = normalizeCart(JSON.parse(rawFromSession));
+    // One-time migration for users who already have cart data in sessionStorage.
+    window.localStorage.setItem(storageKey, JSON.stringify(normalized));
+    return normalized;
   } catch {
     return {};
   }
 }
 
-function saveCartToStorage(cart: CartState): void {
+function saveCartToStorage(storageKey: string, cart: CartState): void {
   if (typeof window === "undefined") {
     return;
   }
 
-  window.sessionStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
+  const serialized = JSON.stringify(cart);
+  window.localStorage.setItem(storageKey, serialized);
+  // Keep legacy storage clean after migration.
+  window.sessionStorage.removeItem(storageKey);
 }
 
-export function useM02Cart(): {
+export function useM02Cart(userId: number | null | undefined): {
   readonly cart: CartState;
   readonly cartItems: readonly CartEntry[];
   readonly cartTotalQuantity: number;
   readonly addSkuToCart: (item: SkuItem) => void;
   readonly setCartQuantity: (skuId: number, quantity: number) => void;
+  readonly replaceCartItems: (items: ReadonlyArray<CartEntry>) => void;
   readonly clearCart: () => void;
 } {
-  const [cart, setCart] = useState<CartState>(() => readCartFromStorage());
+  const storageKey = useMemo(() => buildCartStorageKey(userId), [userId]);
+  const [cart, setCart] = useState<CartState>(() => readCartFromStorage(storageKey));
 
   useEffect(() => {
-    saveCartToStorage(cart);
-  }, [cart]);
+    setCart(readCartFromStorage(storageKey));
+  }, [storageKey]);
+
+  useEffect(() => {
+    saveCartToStorage(storageKey, cart);
+  }, [cart, storageKey]);
 
   const cartItems = useMemo(() => Object.values(cart), [cart]);
   const cartTotalQuantity = useMemo(
@@ -157,6 +185,34 @@ export function useM02Cart(): {
     });
   }
 
+  function replaceCartItems(items: ReadonlyArray<CartEntry>): void {
+    setCart(() => {
+      const next: CartState = {};
+      items.forEach((entry) => {
+        const skuId = Math.trunc(entry.sku.id);
+        if (skuId <= 0) {
+          return;
+        }
+        const normalizedQuantity = Math.max(0, Math.floor(entry.quantity));
+        if (normalizedQuantity <= 0) {
+          return;
+        }
+        const maxAllowed = Math.max(
+          normalizedQuantity,
+          Math.floor(entry.sku.availableStock),
+        );
+        next[skuId] = {
+          sku: {
+            ...entry.sku,
+            availableStock: maxAllowed,
+          },
+          quantity: Math.min(normalizedQuantity, maxAllowed),
+        };
+      });
+      return next;
+    });
+  }
+
   function clearCart(): void {
     setCart({});
   }
@@ -167,7 +223,7 @@ export function useM02Cart(): {
     cartTotalQuantity,
     addSkuToCart,
     setCartQuantity,
+    replaceCartItems,
     clearCart,
   };
 }
-

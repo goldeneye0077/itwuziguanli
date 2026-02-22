@@ -68,7 +68,6 @@ export function InboundPage(): JSX.Element {
   if (!accessToken) {
     return (
       <section className="forbidden-state" role="alert">
-        <p className="app-shell__section-label">M06 入库</p>
         <h2 className="forbidden-state__title">会话令牌缺失，请重新登录。</h2>
       </section>
     );
@@ -200,7 +199,6 @@ export function InboundPage(): JSX.Element {
     <div className="page-stack">
       <section className="app-shell__panel" aria-label="入库工作台说明">
         <div className="page-panel-head">
-          <p className="app-shell__section-label">M06 入库</p>
           <h2 className="app-shell__panel-title">入库执行工作台</h2>
           <p className="app-shell__panel-copy">
             支持手动导入入库、单据识别任务创建/查询/确认。库存查询与管理请前往“库存管理”页面。

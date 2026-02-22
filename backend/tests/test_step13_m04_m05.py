@@ -191,6 +191,26 @@ def _seed_data(session: Session) -> None:
                 applicant_phone_snapshot="13800000000",
                 applicant_job_title_snapshot="Engineer",
             ),
+            Application(
+                id=205,
+                applicant_user_id=1,
+                type=ApplicationType.APPLY,
+                status=ApplicationStatus.ADMIN_APPROVED,
+                delivery_type=DeliveryType.PICKUP,
+                pickup_code="222205",
+                pickup_qr_string=None,
+                title="关于待分配资产自提单的申请",
+            ),
+            Application(
+                id=206,
+                applicant_user_id=1,
+                type=ApplicationType.APPLY,
+                status=ApplicationStatus.ADMIN_APPROVED,
+                delivery_type=DeliveryType.EXPRESS,
+                pickup_code="222206",
+                pickup_qr_string=None,
+                title="关于待分配资产快递单的申请",
+            ),
         ]
     )
 
@@ -207,6 +227,12 @@ def _seed_data(session: Session) -> None:
             ),
             ApplicationItem(
                 id=3004, application_id=204, sku_id=3, quantity=3, note=None
+            ),
+            ApplicationItem(
+                id=3005, application_id=205, sku_id=1, quantity=1, note=None
+            ),
+            ApplicationItem(
+                id=3006, application_id=206, sku_id=2, quantity=1, note=None
             ),
         ]
     )
@@ -446,14 +472,22 @@ def test_m05_outbound_pickup_and_ship_transitions() -> None:
     assert pickup_queue.status_code == 200
     pickup_payload = pickup_queue.json()
     assert pickup_payload["success"] is True
-    assert pickup_payload["data"]["meta"] == {"page": 1, "page_size": 20, "total": 1}
-    assert pickup_payload["data"]["items"][0]["application_id"] == 201
+    assert pickup_payload["data"]["meta"] == {"page": 1, "page_size": 20, "total": 2}
+    pickup_items = {
+        item["application_id"]: item["status"]
+        for item in pickup_payload["data"]["items"]
+    }
+    assert pickup_items == {201: "READY_OUTBOUND", 205: "ADMIN_APPROVED"}
 
     assert express_queue.status_code == 200
     express_payload = express_queue.json()
     assert express_payload["success"] is True
-    assert express_payload["data"]["meta"] == {"page": 1, "page_size": 20, "total": 1}
-    assert express_payload["data"]["items"][0]["application_id"] == 202
+    assert express_payload["data"]["meta"] == {"page": 1, "page_size": 20, "total": 2}
+    express_items = {
+        item["application_id"]: item["status"]
+        for item in express_payload["data"]["items"]
+    }
+    assert express_items == {202: "READY_OUTBOUND", 206: "ADMIN_APPROVED"}
 
     assert confirm_pickup.status_code == 200
     confirm_payload = confirm_pickup.json()

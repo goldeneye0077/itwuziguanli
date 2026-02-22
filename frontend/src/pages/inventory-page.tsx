@@ -139,7 +139,6 @@ export function InventoryPage(): JSX.Element {
   if (!accessToken) {
     return (
       <section className="forbidden-state" role="alert">
-        <p className="app-shell__section-label">M06 库存管理</p>
         <h2 className="forbidden-state__title">会话令牌缺失，请重新登录。</h2>
       </section>
     );
@@ -820,7 +819,6 @@ export function InventoryPage(): JSX.Element {
     <div className="page-stack">
       <section className="app-shell__panel" aria-label="库存管理说明">
         <div className="page-panel-head">
-          <p className="app-shell__section-label">M06 库存管理</p>
           <h2 className="app-shell__panel-title">物料与库存管理</h2>
           <p className="app-shell__panel-copy">
             管理物料（SKU）、资产台账与库存汇总。入库执行请前往“入库”页面。
@@ -1896,3 +1894,4 @@ export function InventoryPage(): JSX.Element {
     </div>
   );
 }
+

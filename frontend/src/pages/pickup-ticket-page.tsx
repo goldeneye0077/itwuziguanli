@@ -85,7 +85,6 @@ export function PickupTicketPage(): JSX.Element {
     <div className="page-stack">
       <section className="app-shell__panel" aria-label="取件凭证头部">
         <div className="page-panel-head">
-          <p className="app-shell__section-label">M04 取件凭证</p>
           <h2 className="app-shell__panel-title">申请单 #{applicationId} 取件凭证</h2>
           <p className="app-shell__panel-copy">
             展示取件凭证详情，并提供二维码/取件码核验能力。

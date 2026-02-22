@@ -30,6 +30,7 @@ from ....models.enums import (
 )
 from ....models.inventory import Asset, StockFlow
 from ....models.organization import SysUser
+from ....models.sku_stock import SkuStock
 from ....schemas.common import ApiResponse, build_success_response
 from ....schemas.m03 import (
     ApplicationApproveRequest,
@@ -300,7 +301,43 @@ def get_application_detail(
         .where(ApplicationItem.application_id == application.id)
         .order_by(ApplicationItem.id.asc())
     ).all()
-    items = [row[0] for row in item_rows]
+    sku_ids = sorted({int(sku.id) for _, sku in item_rows})
+
+    serialized_available_rows = (
+        db.execute(
+            select(Asset.sku_id, func.count(Asset.id))
+            .where(
+                Asset.sku_id.in_(sku_ids),
+                Asset.status == AssetStatus.IN_STOCK,
+                Asset.locked_application_id.is_(None),
+            )
+            .group_by(Asset.sku_id)
+        ).all()
+        if sku_ids
+        else []
+    )
+    serialized_available_map = {
+        int(sku_id): int(count) for sku_id, count in serialized_available_rows
+    }
+
+    quantity_stock_rows = (
+        db.scalars(select(SkuStock).where(SkuStock.sku_id.in_(sku_ids))).all()
+        if sku_ids
+        else []
+    )
+    quantity_available_map = {
+        int(row.sku_id): int(row.on_hand_qty - row.reserved_qty)
+        for row in quantity_stock_rows
+    }
+
+    available_stock_by_sku: dict[int, int] = {}
+    for _, sku in item_rows:
+        sku_id = int(sku.id)
+        if sku.stock_mode == SkuStockMode.QUANTITY:
+            available_stock_by_sku[sku_id] = max(0, quantity_available_map.get(sku_id, 0))
+        else:
+            available_stock_by_sku[sku_id] = max(0, serialized_available_map.get(sku_id, 0))
+
     approval_history = db.scalars(
         select(ApprovalHistory)
         .where(ApprovalHistory.application_id == application.id)
@@ -353,10 +390,15 @@ def get_application_detail(
                         "sku_id": item.sku_id,
                         "quantity": item.quantity,
                         "note": item.note,
+                        "category_id": sku.category_id,
                         "brand": sku.brand,
                         "model": sku.model,
                         "spec": sku.spec,
+                        "reference_price": str(sku.reference_price),
                         "cover_url": sku.cover_url,
+                        "stock_mode": sku.stock_mode.value,
+                        "safety_stock_threshold": sku.safety_stock_threshold,
+                        "available_stock": available_stock_by_sku.get(int(sku.id), 0),
                     }
                     for item, sku in item_rows
                 ],

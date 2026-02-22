@@ -53,8 +53,9 @@ export function StoreCartPage(): JSX.Element {
   const navigate = useNavigate();
   const { state } = useAuthSession();
   const accessToken = state.accessToken;
+  const currentUserId = state.user?.id ?? null;
 
-  const { cartItems, cartTotalQuantity, setCartQuantity, clearCart } = useM02Cart();
+  const { cartItems, cartTotalQuantity, setCartQuantity, clearCart } = useM02Cart(currentUserId);
 
   const [deliveryType, setDeliveryType] = useState<"PICKUP" | "EXPRESS">("PICKUP");
   const [departments, setDepartments] = useState<string[]>([]);
@@ -250,7 +251,6 @@ export function StoreCartPage(): JSX.Element {
     <div className="page-stack">
       <section className="app-shell__panel" aria-label="购物车概览">
         <div className="page-panel-head">
-          <p className="app-shell__section-label">M02 商城</p>
           <h2 className="app-shell__panel-title">领用购物车</h2>
           <p className="app-shell__panel-copy">在当前页面完成结算、地址与申请提交。</p>
         </div>
@@ -312,7 +312,7 @@ export function StoreCartPage(): JSX.Element {
                     <tr key={entry.sku.id}>
                       <td>
                         {entry.sku.coverUrl ? (
-                          <img className="inventory-cover" src={entry.sku.coverUrl} alt={`${entry.sku.brand} ${entry.sku.model}`} />
+                          <img className="store-cart-cover" src={entry.sku.coverUrl} alt={`${entry.sku.brand} ${entry.sku.model}`} />
                         ) : (
                           <span className="muted-text">无图</span>
                         )}
@@ -506,3 +506,4 @@ export function StoreCartPage(): JSX.Element {
     </div>
   );
 }
+

@@ -14,7 +14,7 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ....core.auth import AuthContext, get_auth_context
+from ....core.auth import AuthContext, get_auth_context, get_user_roles
 from ....core.exceptions import AppException
 from ....db.session import get_db_session
 from ....models.application import ApplicationAsset, ApplicationItem
@@ -30,6 +30,7 @@ from ....models.enums import (
 from ....models.inbound import OcrInboundJob
 from ....models.inventory import Asset, StockFlow
 from ....models.organization import SysUser
+from ....models.rbac import RbacRole, RbacUserRole
 from ....models.sku_stock import SkuStock, SkuStockFlow
 from ....schemas.common import ApiResponse, build_success_response
 from ....schemas.m06 import (
@@ -1035,14 +1036,98 @@ def get_inventory_summary(
     return build_success_response(result)
 
 
-def _serialize_category(category: Category) -> dict[str, object]:
+def _serialize_category(
+    category: Category,
+    *,
+    user_name_by_id: dict[int, str] | None = None,
+) -> dict[str, object]:
+    leader_approver_user_id = (
+        int(category.leader_approver_user_id)
+        if category.leader_approver_user_id is not None
+        else None
+    )
+    admin_reviewer_user_id = (
+        int(category.admin_reviewer_user_id)
+        if category.admin_reviewer_user_id is not None
+        else None
+    )
+    names = user_name_by_id or {}
     return {
         "id": category.id,
         "name": category.name,
         "parent_id": category.parent_id,
+        "leader_approver_user_id": leader_approver_user_id,
+        "leader_approver_name": (
+            names.get(leader_approver_user_id) if leader_approver_user_id else None
+        ),
+        "admin_reviewer_user_id": admin_reviewer_user_id,
+        "admin_reviewer_name": (
+            names.get(admin_reviewer_user_id) if admin_reviewer_user_id else None
+        ),
         "created_at": _to_iso8601(category.created_at),
         "updated_at": _to_iso8601(category.updated_at),
     }
+
+
+def _build_admin_category_tree(
+    rows: list[Category],
+    *,
+    user_name_by_id: dict[int, str] | None = None,
+) -> list[dict[str, object]]:
+    node_map: dict[int, dict[str, object]] = {
+        row.id: {**_serialize_category(row, user_name_by_id=user_name_by_id), "children": []}
+        for row in rows
+    }
+    roots: list[dict[str, object]] = []
+    for row in rows:
+        current = node_map[row.id]
+        if row.parent_id is None or row.parent_id not in node_map:
+            roots.append(current)
+            continue
+        parent = node_map[row.parent_id]
+        children = parent["children"]
+        if isinstance(children, list):
+            children.append(current)
+    return roots
+
+
+def _load_user_names(db: Session, user_ids: set[int]) -> dict[int, str]:
+    if not user_ids:
+        return {}
+    rows = db.execute(
+        select(SysUser.id, SysUser.name).where(SysUser.id.in_(list(user_ids)))
+    ).all()
+    return {int(user_id): str(name) for user_id, name in rows}
+
+
+def _assert_user_with_roles(
+    db: Session,
+    *,
+    user_id: int,
+    allowed_roles: set[str],
+    field_name: str,
+) -> None:
+    user = db.get(SysUser, user_id)
+    if user is None:
+        raise AppException(
+            code="RESOURCE_NOT_FOUND",
+            message="指定用户不存在。",
+            details={"field": field_name, "user_id": int(user_id)},
+        )
+
+    roles = get_user_roles(db, int(user_id))
+    if roles.intersection(allowed_roles):
+        return
+    raise AppException(
+        code="VALIDATION_ERROR",
+        message="指定用户角色不符合字段要求。",
+        details={
+            "field": field_name,
+            "user_id": int(user_id),
+            "required_roles": sorted(allowed_roles),
+            "actual_roles": sorted(roles),
+        },
+    )
 
 
 def _normalize_category_name(name: str) -> str:
@@ -1088,6 +1173,85 @@ def _assert_category_parent_valid(
         current = db.scalar(select(Category.parent_id).where(Category.id == current).limit(1))
 
 
+@router.get("/admin/categories/tree", response_model=ApiResponse)
+def list_admin_categories_tree(
+    context: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db_session),
+) -> ApiResponse:
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_READ})
+
+    categories = db.scalars(select(Category).order_by(Category.id.asc())).all()
+    user_ids: set[int] = set()
+    for item in categories:
+        if item.leader_approver_user_id is not None:
+            user_ids.add(int(item.leader_approver_user_id))
+        if item.admin_reviewer_user_id is not None:
+            user_ids.add(int(item.admin_reviewer_user_id))
+    user_name_by_id = _load_user_names(db, user_ids)
+
+    return build_success_response(
+        _build_admin_category_tree(categories, user_name_by_id=user_name_by_id)
+    )
+
+
+@router.get("/admin/categories/approver-options", response_model=ApiResponse)
+def list_category_approver_options(
+    context: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db_session),
+) -> ApiResponse:
+    _require_admin(context, required_permissions={PERMISSION_INVENTORY_READ})
+
+    role_rows = db.execute(
+        select(
+            SysUser.id,
+            SysUser.employee_no,
+            SysUser.name,
+            SysUser.department_name,
+            RbacRole.role_key,
+        )
+        .join(RbacUserRole, RbacUserRole.user_id == SysUser.id)
+        .join(RbacRole, RbacRole.id == RbacUserRole.role_id)
+        .where(RbacRole.role_key.in_(["LEADER", "ADMIN", "SUPER_ADMIN"]))
+        .order_by(SysUser.id.asc(), RbacRole.role_key.asc())
+    ).all()
+
+    role_map: dict[int, dict[str, object]] = {}
+    for user_id, employee_no, name, department_name, role_key in role_rows:
+        key = int(user_id)
+        item = role_map.get(key)
+        if item is None:
+            item = {
+                "id": key,
+                "employee_no": employee_no,
+                "name": name,
+                "department_name": department_name,
+                "roles": [],
+            }
+            role_map[key] = item
+        roles = item["roles"]
+        if isinstance(roles, list) and role_key not in roles:
+            roles.append(role_key)
+
+    leaders: list[dict[str, object]] = []
+    admins: list[dict[str, object]] = []
+    for user_id in sorted(role_map):
+        item = role_map[user_id]
+        roles = set(item.get("roles", []))
+        normalized = {
+            "id": item["id"],
+            "employee_no": item["employee_no"],
+            "name": item["name"],
+            "department_name": item["department_name"],
+            "roles": sorted(roles),
+        }
+        if roles.intersection({"LEADER", "SUPER_ADMIN"}):
+            leaders.append(normalized)
+        if roles.intersection({"ADMIN", "SUPER_ADMIN"}):
+            admins.append(normalized)
+
+    return build_success_response({"leaders": leaders, "admins": admins})
+
+
 @router.post("/admin/categories", response_model=ApiResponse)
 def create_admin_category(
     payload: AdminCategoryCreateRequest,
@@ -1101,11 +1265,42 @@ def create_admin_category(
     if parent_id is not None:
         _assert_category_exists(db, category_id=parent_id)
 
-    record = Category(id=_next_bigint_id(db, Category), name=name, parent_id=parent_id)
+    leader_approver_user_id = payload.leader_approver_user_id
+    admin_reviewer_user_id = payload.admin_reviewer_user_id
+    if leader_approver_user_id is not None:
+        _assert_user_with_roles(
+            db,
+            user_id=int(leader_approver_user_id),
+            allowed_roles={"LEADER", "SUPER_ADMIN"},
+            field_name="leader_approver_user_id",
+        )
+    if admin_reviewer_user_id is not None:
+        _assert_user_with_roles(
+            db,
+            user_id=int(admin_reviewer_user_id),
+            allowed_roles={"ADMIN", "SUPER_ADMIN"},
+            field_name="admin_reviewer_user_id",
+        )
+
+    record = Category(
+        id=_next_bigint_id(db, Category),
+        name=name,
+        parent_id=parent_id,
+        leader_approver_user_id=leader_approver_user_id,
+        admin_reviewer_user_id=admin_reviewer_user_id,
+    )
     db.add(record)
     db.commit()
     db.refresh(record)
-    return build_success_response(_serialize_category(record))
+    user_name_by_id = _load_user_names(
+        db,
+        {
+            int(user_id)
+            for user_id in [leader_approver_user_id, admin_reviewer_user_id]
+            if user_id is not None
+        },
+    )
+    return build_success_response(_serialize_category(record, user_name_by_id=user_name_by_id))
 
 
 @router.put("/admin/categories/{id}", response_model=ApiResponse)
@@ -1123,13 +1318,39 @@ def update_admin_category(
 
     name = _normalize_category_name(payload.name)
     parent_id = payload.parent_id
+    leader_approver_user_id = payload.leader_approver_user_id
+    admin_reviewer_user_id = payload.admin_reviewer_user_id
     _assert_category_parent_valid(db, category_id=int(id), parent_id=parent_id)
+    if leader_approver_user_id is not None:
+        _assert_user_with_roles(
+            db,
+            user_id=int(leader_approver_user_id),
+            allowed_roles={"LEADER", "SUPER_ADMIN"},
+            field_name="leader_approver_user_id",
+        )
+    if admin_reviewer_user_id is not None:
+        _assert_user_with_roles(
+            db,
+            user_id=int(admin_reviewer_user_id),
+            allowed_roles={"ADMIN", "SUPER_ADMIN"},
+            field_name="admin_reviewer_user_id",
+        )
 
     record.name = name
     record.parent_id = parent_id
+    record.leader_approver_user_id = leader_approver_user_id
+    record.admin_reviewer_user_id = admin_reviewer_user_id
     db.commit()
     db.refresh(record)
-    return build_success_response(_serialize_category(record))
+    user_name_by_id = _load_user_names(
+        db,
+        {
+            int(user_id)
+            for user_id in [leader_approver_user_id, admin_reviewer_user_id]
+            if user_id is not None
+        },
+    )
+    return build_success_response(_serialize_category(record, user_name_by_id=user_name_by_id))
 
 
 @router.delete("/admin/categories/{id}", response_model=ApiResponse)

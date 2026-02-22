@@ -107,7 +107,6 @@ export function AssetsPage(): JSX.Element {
   if (!accessToken) {
     return (
       <section className="forbidden-state" role="alert">
-        <p className="app-shell__section-label">M01 资产</p>
         <h2 className="forbidden-state__title">会话令牌缺失，请重新登录。</h2>
       </section>
     );
@@ -120,7 +119,6 @@ export function AssetsPage(): JSX.Element {
     <div className="page-stack">
       <section className="app-shell__panel" aria-label="我的资产概览">
         <div className="page-panel-head">
-          <p className="app-shell__section-label">M01 资产</p>
           <h2 className="app-shell__panel-title">我的资产</h2>
           <p className="app-shell__panel-copy">
             展示当前登录用户持有的资产清单，可按关键词与状态筛选后查看详情或发起生命周期操作。

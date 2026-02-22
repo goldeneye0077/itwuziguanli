@@ -10,13 +10,35 @@ from app.models.mixins import TimestampMixin
 
 class Category(TimestampMixin, Base):
     __tablename__ = "category"
-    __table_args__ = (Index("idx_category_parent", "parent_id"),)
+    __table_args__ = (
+        Index("idx_category_parent", "parent_id"),
+        Index("idx_category_leader_approver", "leader_approver_user_id"),
+        Index("idx_category_admin_reviewer", "admin_reviewer_user_id"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     parent_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey("category.id", name="fk_category_parent", ondelete="SET NULL"),
+        nullable=True,
+    )
+    leader_approver_user_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "sys_user.id",
+            name="fk_category_leader_approver",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    admin_reviewer_user_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "sys_user.id",
+            name="fk_category_admin_reviewer",
+            ondelete="SET NULL",
+        ),
         nullable=True,
     )
 

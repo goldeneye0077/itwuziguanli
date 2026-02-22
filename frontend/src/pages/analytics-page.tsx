@@ -147,7 +147,6 @@ export function AnalyticsPage({ routePath }: AnalyticsPageProps): JSX.Element {
   if (!accessToken) {
     return (
       <section className="forbidden-state" role="alert">
-        <p className="app-shell__section-label">M07 报表与智能问答</p>
         <h2 className="forbidden-state__title">会话令牌缺失，请重新登录。</h2>
       </section>
     );
@@ -283,7 +282,6 @@ export function AnalyticsPage({ routePath }: AnalyticsPageProps): JSX.Element {
       <div className="page-stack">
       <section className="app-shell__panel" aria-label="分析与智能问答说明">
         <div className="page-panel-head">
-          <p className="app-shell__section-label">M07 报表与智能问答</p>
           <h2 className="app-shell__panel-title">
             {isAnalyticsRoute ? "分析报表中心" : "智能问答查询控制台"}
           </h2>
@@ -631,3 +629,4 @@ export function AnalyticsPage({ routePath }: AnalyticsPageProps): JSX.Element {
     </div>
   );
 }
+

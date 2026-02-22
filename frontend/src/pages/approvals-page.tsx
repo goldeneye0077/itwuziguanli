@@ -121,7 +121,6 @@ export function ApprovalsPage({
     <div className="page-stack">
       <section className="app-shell__panel" aria-label="审批待办头部">
         <div className="page-panel-head">
-          <p className="app-shell__section-label">M03 审批待办</p>
           <h2 className="app-shell__panel-title">
             {node === "LEADER" ? "领导审批待办" : "管理员审批待办"}
           </h2>
@@ -335,3 +334,4 @@ export function ApprovalsPage({
     </div>
   );
 }
+

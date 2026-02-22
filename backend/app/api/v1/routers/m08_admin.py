@@ -56,6 +56,48 @@ PERMISSION_OUTBOUND_READ = "OUTBOUND:READ"
 UI_GUARD_TYPE_ROUTE = "ROUTE"
 UI_GUARD_TYPE_ACTION = "ACTION"
 
+BUILTIN_PERMISSION_DEFS: tuple[dict[str, str], ...] = (
+    {
+        "code": PERMISSION_RBAC_UPDATE,
+        "resource": "RBAC_ADMIN",
+        "action": "UPDATE",
+        "zh_name": "权限治理管理",
+        "zh_description": "管理角色、权限目录以及页面/按钮权限映射。",
+    },
+    {
+        "code": PERMISSION_INVENTORY_READ,
+        "resource": "INVENTORY",
+        "action": "READ",
+        "zh_name": "库存查询",
+        "zh_description": "查看库存、资产、物料等库存相关数据。",
+    },
+    {
+        "code": PERMISSION_INVENTORY_WRITE,
+        "resource": "INVENTORY",
+        "action": "WRITE",
+        "zh_name": "库存维护",
+        "zh_description": "执行入库、出库、盘点、物料维护等库存写操作。",
+    },
+    {
+        "code": PERMISSION_REPORTS_READ,
+        "resource": "REPORTS",
+        "action": "READ",
+        "zh_name": "报表查询",
+        "zh_description": "查看分析报表并执行统计分析相关操作。",
+    },
+    {
+        "code": PERMISSION_OUTBOUND_READ,
+        "resource": "OUTBOUND",
+        "action": "READ",
+        "zh_name": "出库记录查询",
+        "zh_description": "查看出库执行页面与出库记录明细、导出记录。",
+    },
+)
+
+BUILTIN_PERMISSION_META_BY_CODE: dict[str, dict[str, str]] = {
+    str(item["code"]): item for item in BUILTIN_PERMISSION_DEFS
+}
+
 
 def _to_iso8601(value: datetime | None) -> str | None:
     if value is None:
@@ -270,13 +312,118 @@ def _permission_name(resource: str, action: str) -> str:
     return f"{resource}:{action}"
 
 
-def _serialize_permission(permission: RbacPermission) -> dict[str, object]:
+def _sync_builtin_permissions(db: Session) -> None:
+    permission_pairs = [
+        (str(item["resource"]), str(item["action"])) for item in BUILTIN_PERMISSION_DEFS
+    ]
+    if not permission_pairs:
+        return
+
+    conditions = [
+        (RbacPermission.resource == resource) & (RbacPermission.action == action)
+        for resource, action in permission_pairs
+    ]
+    existing_permissions = db.scalars(
+        select(RbacPermission).where(or_(*conditions))
+    ).all()
+    permission_by_pair: dict[tuple[str, str], RbacPermission] = {
+        (item.resource, item.action): item for item in existing_permissions
+    }
+
+    has_changes = False
+    next_permission_id = _next_bigint_id(db, RbacPermission)
+    for item in BUILTIN_PERMISSION_DEFS:
+        resource = str(item["resource"])
+        action = str(item["action"])
+        code = str(item["code"])
+        zh_description = str(item["zh_description"])
+        permission = permission_by_pair.get((resource, action))
+        if permission is None:
+            db.add(
+                RbacPermission(
+                    id=next_permission_id,
+                    resource=resource,
+                    action=action,
+                    name=code,
+                    description=zh_description,
+                )
+            )
+            next_permission_id += 1
+            has_changes = True
+            continue
+
+        updated = False
+        if permission.name != code:
+            permission.name = code
+            updated = True
+        if (permission.description or "") != zh_description:
+            permission.description = zh_description
+            updated = True
+        has_changes = has_changes or updated
+
+    if has_changes:
+        _commit_or_raise_validation_error(db)
+
+
+def _build_permission_reference_maps(
+    ui_guard_payload: dict[str, list[dict[str, object]]],
+) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    route_refs: dict[str, set[str]] = {}
+    action_refs: dict[str, set[str]] = {}
+
+    for route_item in ui_guard_payload.get("routes", []):
+        route_key = str(route_item.get("key", "")).strip()
+        if not route_key:
+            continue
+        raw_permissions = cast(list[str], route_item.get("required_permissions", []))
+        for permission in _normalize_required_permissions(set(raw_permissions)):
+            route_refs.setdefault(permission, set()).add(route_key)
+
+    for action_item in ui_guard_payload.get("actions", []):
+        action_key = str(action_item.get("key", "")).strip()
+        if not action_key:
+            continue
+        raw_permissions = cast(list[str], action_item.get("required_permissions", []))
+        for permission in _normalize_required_permissions(set(raw_permissions)):
+            action_refs.setdefault(permission, set()).add(action_key)
+
+    normalized_route_refs = {
+        key: sorted(values) for key, values in sorted(route_refs.items())
+    }
+    normalized_action_refs = {
+        key: sorted(values) for key, values in sorted(action_refs.items())
+    }
+    return normalized_route_refs, normalized_action_refs
+
+
+def _serialize_permission(
+    permission: RbacPermission,
+    *,
+    route_refs_map: dict[str, list[str]] | None = None,
+    action_refs_map: dict[str, list[str]] | None = None,
+) -> dict[str, object]:
+    code = _permission_name(permission.resource, permission.action)
+    builtin_meta = BUILTIN_PERMISSION_META_BY_CODE.get(code)
+    fallback_zh_name = f"{permission.resource} {permission.action}"
+    fallback_zh_description = (
+        str(permission.description).strip() if permission.description else "未提供中文说明。"
+    )
     return {
         "id": permission.id,
         "resource": permission.resource,
         "action": permission.action,
         "name": permission.name,
         "description": permission.description,
+        "code": code,
+        "zh_name": str(builtin_meta["zh_name"]) if builtin_meta else fallback_zh_name,
+        "zh_description": (
+            str(builtin_meta["zh_description"])
+            if builtin_meta
+            else fallback_zh_description
+        ),
+        "route_refs": (route_refs_map or {}).get(code, []),
+        "action_refs": (action_refs_map or {}).get(code, []),
+        "is_builtin": builtin_meta is not None,
     }
 
 
@@ -1595,6 +1742,9 @@ def list_permissions(
     db: Session = Depends(get_db_session),
 ) -> ApiResponse:
     _require_super_admin(context, required_permissions={PERMISSION_RBAC_UPDATE})
+    _sync_builtin_permissions(db)
+    ui_guard_payload = _load_ui_guard_payload(db)
+    route_refs_map, action_refs_map = _build_permission_reference_maps(ui_guard_payload)
 
     permissions = db.scalars(
         select(RbacPermission).order_by(
@@ -1603,7 +1753,16 @@ def list_permissions(
             RbacPermission.id.asc(),
         )
     ).all()
-    return build_success_response([_serialize_permission(item) for item in permissions])
+    return build_success_response(
+        [
+            _serialize_permission(
+                item,
+                route_refs_map=route_refs_map,
+                action_refs_map=action_refs_map,
+            )
+            for item in permissions
+        ]
+    )
 
 
 @router.get("/rbac/ui-guards", response_model=ApiResponse)
@@ -1780,6 +1939,36 @@ def replace_user_roles(
         {
             "user_id": user.id,
             "roles": normalized_role_keys,
+        }
+    )
+
+
+@router.get("/admin/users/{id}/roles", response_model=ApiResponse)
+def get_user_roles(
+    id: int,
+    context: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db_session),
+) -> ApiResponse:
+    _require_super_admin(context, required_permissions={PERMISSION_RBAC_UPDATE})
+
+    user = db.get(SysUser, id)
+    if user is None:
+        raise AppException(code="USER_NOT_FOUND", message="用户不存在。")
+
+    role_keys = db.scalars(
+        select(RbacRole.role_key)
+        .join(RbacUserRole, RbacUserRole.role_id == RbacRole.id)
+        .where(RbacUserRole.user_id == user.id)
+        .order_by(RbacRole.role_key.asc())
+    ).all()
+
+    return build_success_response(
+        {
+            "user_id": user.id,
+            "employee_no": user.employee_no,
+            "name": user.name,
+            "department_name": user.department_name,
+            "roles": role_keys,
         }
     )
 

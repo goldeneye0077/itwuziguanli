@@ -2,17 +2,19 @@
 import { Link } from "react-router-dom";
 
 import {
+  type AdminCategoryTreeNode,
   createAdminCategory,
   createAdminSku,
   deleteAdminCategory,
   deleteAdminSku,
   fetchAdminSkus,
-  fetchCategoryTree,
+  fetchAdminCategoryApproverOptions,
+  fetchAdminCategoryTree,
   updateAdminCategory,
   updateAdminSku,
   uploadSkuImage,
   type AdminSkuItem,
-  type CategoryTreeNode,
+  type CategoryApproverOption,
   type SkuStockMode,
 } from "../api";
 import { hasActionPermission, PERMISSION_KEYS } from "../permissions";
@@ -23,11 +25,15 @@ interface FlatCategoryOption {
   readonly id: number;
   readonly name: string;
   readonly parentId: number | null;
+  readonly leaderApproverUserId: number | null;
+  readonly leaderApproverName: string | null;
+  readonly adminReviewerUserId: number | null;
+  readonly adminReviewerName: string | null;
   readonly depth: number;
 }
 
 function flattenCategoryTree(
-  nodes: readonly CategoryTreeNode[],
+  nodes: readonly AdminCategoryTreeNode[],
   parentId: number | null = null,
   depth = 0,
 ): FlatCategoryOption[] {
@@ -37,6 +43,10 @@ function flattenCategoryTree(
       id: node.id,
       name: node.name,
       parentId,
+      leaderApproverUserId: node.leaderApproverUserId,
+      leaderApproverName: node.leaderApproverName,
+      adminReviewerUserId: node.adminReviewerUserId,
+      adminReviewerName: node.adminReviewerName,
       depth,
     });
     if (node.children.length) {
@@ -58,6 +68,12 @@ function toStockModeLabel(mode: SkuStockMode): string {
   return "序列号资产（需要 SN）";
 }
 
+function toApproverOptionLabel(option: CategoryApproverOption): string {
+  const roleLabel = option.roles.join("/");
+  const dept = option.departmentName ? ` - ${option.departmentName}` : "";
+  return `${option.name}（${option.employeeNo}）${dept} - ${roleLabel}`;
+}
+
 export function MaterialsPage(): JSX.Element {
   const { state, hasPermission, userRoles, userPermissions } = useAuthSession();
   const accessToken = state.accessToken;
@@ -76,17 +92,24 @@ export function MaterialsPage(): JSX.Element {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const [categories, setCategories] = useState<CategoryTreeNode[]>([]);
+  const [categories, setCategories] = useState<AdminCategoryTreeNode[]>([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
+  const [isLoadingApprovers, setIsLoadingApprovers] = useState(false);
   const categoryOptions = useMemo(() => flattenCategoryTree(categories), [categories]);
+  const [leaderApproverOptions, setLeaderApproverOptions] = useState<CategoryApproverOption[]>([]);
+  const [adminReviewerOptions, setAdminReviewerOptions] = useState<CategoryApproverOption[]>([]);
 
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryParentId, setNewCategoryParentId] = useState<string>("");
+  const [newCategoryLeaderApproverUserId, setNewCategoryLeaderApproverUserId] = useState<string>("");
+  const [newCategoryAdminReviewerUserId, setNewCategoryAdminReviewerUserId] = useState<string>("");
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
 
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
   const [editCategoryName, setEditCategoryName] = useState("");
   const [editCategoryParentId, setEditCategoryParentId] = useState<string>("");
+  const [editCategoryLeaderApproverUserId, setEditCategoryLeaderApproverUserId] = useState<string>("");
+  const [editCategoryAdminReviewerUserId, setEditCategoryAdminReviewerUserId] = useState<string>("");
   const [isUpdatingCategory, setIsUpdatingCategory] = useState(false);
 
   const [deletingCategoryId, setDeletingCategoryId] = useState<number | null>(null);
@@ -125,7 +148,6 @@ export function MaterialsPage(): JSX.Element {
   if (!accessToken) {
     return (
       <section className="forbidden-state" role="alert">
-        <p className="app-shell__section-label">M06 物料管理</p>
         <h2 className="forbidden-state__title">会话令牌缺失，请重新登录。</h2>
       </section>
     );
@@ -141,7 +163,7 @@ export function MaterialsPage(): JSX.Element {
     setIsLoadingCategories(true);
     setErrorMessage(null);
     try {
-      const next = await fetchCategoryTree(token);
+      const next = await fetchAdminCategoryTree(token);
       setCategories(next);
       if (!newSkuCategoryId && next.length > 0) {
         const first = flattenCategoryTree(next)[0];
@@ -155,6 +177,23 @@ export function MaterialsPage(): JSX.Element {
       setIsLoadingCategories(false);
     }
   }, [canReadMaterials, newSkuCategoryId, token]);
+
+  const loadApproverOptions = useCallback(async (): Promise<void> => {
+    if (!canReadMaterials) {
+      return;
+    }
+    setIsLoadingApprovers(true);
+    setErrorMessage(null);
+    try {
+      const options = await fetchAdminCategoryApproverOptions(token);
+      setLeaderApproverOptions(options.leaders);
+      setAdminReviewerOptions(options.admins);
+    } catch (error) {
+      setErrorMessage(toErrorMessage(error, "加载审批人选项失败。"));
+    } finally {
+      setIsLoadingApprovers(false);
+    }
+  }, [canReadMaterials, token]);
 
   const loadSkus = useCallback(async (): Promise<void> => {
     if (!canReadMaterials) {
@@ -197,8 +236,9 @@ export function MaterialsPage(): JSX.Element {
 
   useEffect(() => {
     void loadCategories();
+    void loadApproverOptions();
     void loadSkus();
-  }, [loadCategories, loadSkus]);
+  }, [loadApproverOptions, loadCategories, loadSkus]);
 
   async function handleCreateCategory(): Promise<void> {
     if (!canManageCategories) {
@@ -217,6 +257,20 @@ export function MaterialsPage(): JSX.Element {
       return;
     }
 
+    const normalizedLeaderId = newCategoryLeaderApproverUserId.trim();
+    const parsedLeaderId = normalizedLeaderId ? parsePositiveInteger(normalizedLeaderId) : null;
+    if (normalizedLeaderId && parsedLeaderId === null) {
+      setErrorMessage("审批领导必须为有效人员。");
+      return;
+    }
+
+    const normalizedAdminId = newCategoryAdminReviewerUserId.trim();
+    const parsedAdminId = normalizedAdminId ? parsePositiveInteger(normalizedAdminId) : null;
+    if (normalizedAdminId && parsedAdminId === null) {
+      setErrorMessage("管理员必须为有效人员。");
+      return;
+    }
+
     setIsCreatingCategory(true);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -224,9 +278,13 @@ export function MaterialsPage(): JSX.Element {
       await createAdminCategory(token, {
         name: newCategoryName.trim(),
         parentId: parsedParentId,
+        leaderApproverUserId: parsedLeaderId,
+        adminReviewerUserId: parsedAdminId,
       });
       setNewCategoryName("");
       setNewCategoryParentId("");
+      setNewCategoryLeaderApproverUserId("");
+      setNewCategoryAdminReviewerUserId("");
       await loadCategories();
       setSuccessMessage("分类创建成功。");
     } catch (error) {
@@ -240,12 +298,20 @@ export function MaterialsPage(): JSX.Element {
     setEditingCategoryId(option.id);
     setEditCategoryName(option.name);
     setEditCategoryParentId(option.parentId ? String(option.parentId) : "");
+    setEditCategoryLeaderApproverUserId(
+      option.leaderApproverUserId ? String(option.leaderApproverUserId) : "",
+    );
+    setEditCategoryAdminReviewerUserId(
+      option.adminReviewerUserId ? String(option.adminReviewerUserId) : "",
+    );
   }
 
   function handleCancelEditCategory(): void {
     setEditingCategoryId(null);
     setEditCategoryName("");
     setEditCategoryParentId("");
+    setEditCategoryLeaderApproverUserId("");
+    setEditCategoryAdminReviewerUserId("");
   }
 
   async function handleUpdateCategory(): Promise<void> {
@@ -268,6 +334,20 @@ export function MaterialsPage(): JSX.Element {
       return;
     }
 
+    const normalizedLeaderId = editCategoryLeaderApproverUserId.trim();
+    const parsedLeaderId = normalizedLeaderId ? parsePositiveInteger(normalizedLeaderId) : null;
+    if (normalizedLeaderId && parsedLeaderId === null) {
+      setErrorMessage("审批领导必须为有效人员。");
+      return;
+    }
+
+    const normalizedAdminId = editCategoryAdminReviewerUserId.trim();
+    const parsedAdminId = normalizedAdminId ? parsePositiveInteger(normalizedAdminId) : null;
+    if (normalizedAdminId && parsedAdminId === null) {
+      setErrorMessage("管理员必须为有效人员。");
+      return;
+    }
+
     setIsUpdatingCategory(true);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -275,6 +355,8 @@ export function MaterialsPage(): JSX.Element {
       await updateAdminCategory(token, editingCategoryId, {
         name: editCategoryName.trim(),
         parentId: parsedParentId,
+        leaderApproverUserId: parsedLeaderId,
+        adminReviewerUserId: parsedAdminId,
       });
       handleCancelEditCategory();
       await loadCategories();
@@ -508,7 +590,6 @@ export function MaterialsPage(): JSX.Element {
     <div className="page-stack">
       <section className="app-shell__panel" aria-label="物料管理说明">
         <div className="page-panel-head">
-          <p className="app-shell__section-label">M06 物料管理</p>
           <h2 className="app-shell__panel-title">分类与物料（SKU）管理</h2>
           <p className="app-shell__panel-copy">
             `/materials` 负责主数据维护：分类（大类/小类）与物料（SKU）CRUD，不包含库存数量。库存数量请在“库存管理”页维护。
@@ -562,7 +643,9 @@ export function MaterialsPage(): JSX.Element {
                 {isLoadingCategories ? "加载中..." : "刷新分类树"}
               </button>
               <span className="inbound-import-meta">
-                {isLoadingCategories ? "分类加载中..." : `分类：${categoryOptions.length}`}
+                {isLoadingCategories
+                  ? "分类加载中..."
+                  : `分类：${categoryOptions.length} · 领导：${leaderApproverOptions.length} · 管理员：${adminReviewerOptions.length}${isLoadingApprovers ? "（人员加载中）" : ""}`}
               </span>
             </div>
 
@@ -587,6 +670,34 @@ export function MaterialsPage(): JSX.Element {
                     {categoryOptions.map((option) => (
                       <option key={option.id} value={option.id}>
                         {toCategoryOptionLabel(option)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="store-field">
+                  审批领导设置（可选）
+                  <select
+                    value={newCategoryLeaderApproverUserId}
+                    onChange={(event) => setNewCategoryLeaderApproverUserId(event.target.value)}
+                  >
+                    <option value="">（不指定）</option>
+                    {leaderApproverOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {toApproverOptionLabel(option)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="store-field">
+                  管理员设置（可选）
+                  <select
+                    value={newCategoryAdminReviewerUserId}
+                    onChange={(event) => setNewCategoryAdminReviewerUserId(event.target.value)}
+                  >
+                    <option value="">（不指定）</option>
+                    {adminReviewerOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {toApproverOptionLabel(option)}
                       </option>
                     ))}
                   </select>
@@ -635,6 +746,34 @@ export function MaterialsPage(): JSX.Element {
                         ))}
                     </select>
                   </label>
+                  <label className="store-field">
+                    审批领导设置（可选）
+                    <select
+                      value={editCategoryLeaderApproverUserId}
+                      onChange={(event) => setEditCategoryLeaderApproverUserId(event.target.value)}
+                    >
+                      <option value="">（不指定）</option>
+                      {leaderApproverOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {toApproverOptionLabel(option)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="store-field">
+                    管理员设置（可选）
+                    <select
+                      value={editCategoryAdminReviewerUserId}
+                      onChange={(event) => setEditCategoryAdminReviewerUserId(event.target.value)}
+                    >
+                      <option value="">（不指定）</option>
+                      {adminReviewerOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {toApproverOptionLabel(option)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <div className="page-actions">
                     <button
                       className="auth-submit"
@@ -669,6 +808,8 @@ export function MaterialsPage(): JSX.Element {
                       <th>ID</th>
                       <th>名称</th>
                       <th>父级</th>
+                      <th>审批领导设置</th>
+                      <th>管理员设置</th>
                       <th>操作</th>
                     </tr>
                   </thead>
@@ -682,6 +823,18 @@ export function MaterialsPage(): JSX.Element {
                           </span>
                         </td>
                         <td>{option.parentId ?? "-"}</td>
+                        <td>
+                          {option.leaderApproverName ??
+                            (option.leaderApproverUserId
+                              ? `用户 #${option.leaderApproverUserId}`
+                              : "-")}
+                        </td>
+                        <td>
+                          {option.adminReviewerName ??
+                            (option.adminReviewerUserId
+                              ? `用户 #${option.adminReviewerUserId}`
+                              : "-")}
+                        </td>
                         <td>
                           <div className="inbound-table-actions">
                             <button
@@ -1096,3 +1249,4 @@ export function MaterialsPage(): JSX.Element {
     </div>
   );
 }
+

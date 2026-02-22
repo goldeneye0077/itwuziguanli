@@ -334,6 +334,29 @@ def test_m08_rbac_happy_path_and_deterministic_replacement() -> None:
         }
         assert ("REPORTS", "READ") in permission_pairs
         assert ("REPORTS", "EXPORT") in permission_pairs
+        permission_by_code = {
+            item["code"]: item for item in list_permissions_payload["data"]
+        }
+        assert "RBAC_ADMIN:UPDATE" in permission_by_code
+        assert "INVENTORY:READ" in permission_by_code
+        assert "OUTBOUND:READ" in permission_by_code
+        assert permission_by_code["RBAC_ADMIN:UPDATE"]["is_builtin"] is True
+        assert permission_by_code["RBAC_ADMIN:UPDATE"]["zh_description"]
+        assert "/admin/rbac" in permission_by_code["RBAC_ADMIN:UPDATE"]["route_refs"]
+        assert "outbound.fetch-records" in permission_by_code["OUTBOUND:READ"]["action_refs"]
+
+        get_user_roles_before_replace_response = client.get(
+            "/api/v1/admin/users/3/roles",
+            headers=headers,
+        )
+        assert get_user_roles_before_replace_response.status_code == 200
+        get_user_roles_before_replace_payload = (
+            get_user_roles_before_replace_response.json()
+        )
+        assert get_user_roles_before_replace_payload["success"] is True
+        assert get_user_roles_before_replace_payload["data"]["user_id"] == 3
+        assert get_user_roles_before_replace_payload["data"]["employee_no"] == "U0001"
+        assert get_user_roles_before_replace_payload["data"]["roles"] == ["USER"]
 
         list_ui_guards_response = client.get("/api/v1/rbac/ui-guards", headers=headers)
         assert list_ui_guards_response.status_code == 200
@@ -401,6 +424,15 @@ def test_m08_rbac_happy_path_and_deterministic_replacement() -> None:
         replace_user_roles_payload = replace_user_roles_response.json()
         assert replace_user_roles_payload["success"] is True
         assert replace_user_roles_payload["data"]["roles"] == ["AUDITOR", "USER"]
+
+        get_user_roles_after_replace_response = client.get(
+            "/api/v1/admin/users/3/roles",
+            headers=headers,
+        )
+        assert get_user_roles_after_replace_response.status_code == 200
+        get_user_roles_after_replace_payload = get_user_roles_after_replace_response.json()
+        assert get_user_roles_after_replace_payload["success"] is True
+        assert get_user_roles_after_replace_payload["data"]["roles"] == ["AUDITOR", "USER"]
 
     with session_factory() as session:
         auditor_role_id = session.scalar(
@@ -645,6 +677,15 @@ def test_m08_validation_and_error_branches() -> None:
         )
         assert missing_user_response.status_code == 404
         assert missing_user_response.json()["error"]["code"] == "USER_NOT_FOUND"
+
+        missing_user_roles_state_response = client.get(
+            "/api/v1/admin/users/999/roles",
+            headers=headers,
+        )
+        assert missing_user_roles_state_response.status_code == 404
+        assert (
+            missing_user_roles_state_response.json()["error"]["code"] == "USER_NOT_FOUND"
+        )
 
         invalid_resource_response = client.get(
             "/api/v1/admin/crud/unknown",

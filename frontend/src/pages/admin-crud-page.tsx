@@ -798,7 +798,6 @@ export function AdminCrudPage(): JSX.Element {
   if (!accessToken) {
     return (
       <section className="forbidden-state" role="alert">
-        <p className="app-shell__section-label">M08 数据面板</p>
         <h2 className="forbidden-state__title">会话令牌缺失，请重新登录。</h2>
       </section>
     );
@@ -807,7 +806,6 @@ export function AdminCrudPage(): JSX.Element {
   if (!isSuperAdmin) {
     return (
       <section className="forbidden-state" role="alert">
-        <p className="app-shell__section-label">M08 数据面板</p>
         <h2 className="forbidden-state__title">当前角色无权访问该页面。</h2>
         <p className="forbidden-state__detail">
           所需角色：<strong>{toRoleListLabel(["SUPER_ADMIN"])}</strong>，当前角色：
@@ -823,7 +821,6 @@ export function AdminCrudPage(): JSX.Element {
     <div className="page-stack">
       <section className="app-shell__panel" aria-label="后台数据面板说明">
         <div className="page-panel-head">
-          <p className="app-shell__section-label">M08 数据面板</p>
           <h2 className="app-shell__panel-title">通用数据 CRUD 面板</h2>
           <p className="app-shell__panel-copy">仅 SUPER_ADMIN 可执行增删改查。</p>
         </div>

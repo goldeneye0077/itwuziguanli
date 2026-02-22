@@ -74,7 +74,6 @@ export function AssetLifecyclePage({ routePath }: AssetLifecyclePageProps): JSX.
   if (!accessToken) {
     return (
       <section className="forbidden-state" role="alert">
-        <p className="app-shell__section-label">M09 资产生命周期</p>
         <h2 className="forbidden-state__title">会话令牌缺失，请重新登录。</h2>
       </section>
     );
@@ -203,7 +202,6 @@ export function AssetLifecyclePage({ routePath }: AssetLifecyclePageProps): JSX.
     <div className="page-stack">
       <section className="app-shell__panel" aria-label="资产生命周期说明">
         <div className="page-panel-head">
-          <p className="app-shell__section-label">M09 资产生命周期</p>
           <h2 className="app-shell__panel-title">生命周期操作台</h2>
           <p className="app-shell__panel-copy">
             当前功能：<strong>{ROUTE_LABELS[routePath]}</strong>，已连接到真实生命周期接口。

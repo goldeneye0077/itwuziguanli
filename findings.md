@@ -1,4 +1,55 @@
-﻿## Z2 验收结论 (2026-02-12 出库记录列表文案与交互精简)
+## A1 ???? (2026-02-12 ????)
+- ?????`/store` ????????????????????????
+- ???????????????????breadcrumb??????????????
+
+## A1 ????
+- ? `store-shell` ??????????
+- `store-shell__catalog-head` ?????????
+- `store-shell__sidebar` ?????????????????
+## P1 ???? (2026-02-12 ??????)
+- ????????????????????????????????????
+- ?????????? `sessionStorage`?????????????
+
+## P1 ????
+- ? `useM02Cart` ?????? `localStorage`???????? key?`pgc-m02-cart-v1:{userId}`????
+- ????????? `localStorage` ???? `sessionStorage` ??????????????? `localStorage`?
+﻿## B1 需求确认 (2026-02-12 顶部 M 文案移除)
+- 用户要求：删除每个页面最上方横幅中的 `M` 开头文案（示例：`M02 商城`）。
+- 范围：仅删除顶部模块标识，不影响页面标题和功能区标签。
+
+## B1 实施决策
+- 批量移除页面中形如 `<p className="app-shell__section-label">Mxx ...</p>` 的节点。
+- 不修改 `useM02Cart` 等代码标识符；不删除非 `Mxx` 的普通标签（如“提示”“筛选栏”）。
+
+## B1 执行结果与阻塞
+- 代码检索结果：`frontend/src/pages` 中已无 `Mxx` 顶部标签文案，当前仅存在 `useM02Cart` 这类代码命名。
+- 发布阻塞：Docker 刷新时前端镜像构建失败，报错为 `frontend/src/pages/store-page.tsx:60:87 Unterminated string literal`。
+- 影响判断：该阻塞属于历史遗留语法损坏，不是本次“移除 M 文案”引入。
+
+## B1 收尾结论（2026-02-12）
+- 已修复前端语法损坏页并恢复可构建状态：`store-page.tsx`、`assets-page.tsx`、`asset-detail-page.tsx`、`asset-lifecycle-page.tsx`、`inbound-page.tsx`、`pickup-ticket-page.tsx`、`admin-crud-page.tsx`。
+- 已补回关键业务改动：`StorePage` 继续使用按用户隔离购物车（`useM02Cart(currentUserId)`）。
+- 顶部 `Mxx` 文案已完成清理，检索无命中：`rg -n 'app-shell__section-label\">M[0-9]{2} ' frontend/src/pages`。
+- 验证通过：`npm --prefix frontend run typecheck`、`deploy/scripts/refresh-dev.ps1`、`/healthz`、`/api/healthz`。
+## U1 需求确认 (2026-02-12 购物车用户隔离)
+- 用户反馈：领用商城与购物车跨账号共享同一车内容，违反数据隔离预期。
+- 目标行为：购物车按登录用户独立隔离；A 用户不可见 B 用户购物车。
+
+## U1 根因与决策
+- 根因：`useM02Cart` 当前使用固定 key `pgc-m02-cart-v1` 写入 `sessionStorage`，未纳入用户身份。
+- 决策：将购物车存储 key 改为 `pgc-m02-cart-v1:{userId}`，并在用户ID变化时重新加载对应购物车。
+- 决策：调用方（商城页、购物车页）统一传入 `state.user?.id`，只改前端存储逻辑，不改后端接口。
+## C2 验收结论 (2026-02-12 购物车缩略图尺寸下调)
+- `/store/cart` 物料清单缩略图已按约一半尺寸下调（新尺寸：`96x54`）。
+- 实现方式为购物车页面独立样式类 `store-cart-cover`，不会影响审批页与申请详情页的图片显示。
+- 本次仅改前端展示层，不涉及接口与数据逻辑。
+## C1 需求确认 (2026-02-12 购物车缩略图)
+- 用户要求：`/store/cart` 的物料清单缩略图太大，先缩小一半观察效果。
+
+## C1 实施决策
+- 仅改 `store-cart-page.tsx` 与 `index.css`：为购物车图片使用独立类名，避免影响审批页与申请详情页。
+- 本次仅调整展示尺寸，不改接口、不改数据结构。
+## Z2 验收结论 (2026-02-12 出库记录列表文案与交互精简)
 - “出库记录列表”已移除“向左/向右”按钮，保留横向滚动条作为唯一横向浏览入口。
 - 表头已从英文字段名改为中文显示名，逐列对应原有字段含义。
 - 本次仅修改前端展示层，不涉及后端接口、导出字段和数据逻辑。
@@ -313,3 +364,130 @@
 
 
 
+
+
+
+
+## D1 需求确认 (2026-02-12 申请详情样式优化)
+- 目标页面：`/applications` 列表点击“查看详情”进入的申请详情页（`/applications/:id`）。
+- 需求1：领用物料清单中的缩略图过大，需缩小约一半。
+- 需求2：页面中“申请人信息”“领用物料清单”两张卡片里删除“表1”“表2”标签文案。
+
+## D1 实施决策
+- 仅修改申请详情页，不影响审批页等其他使用物料表格的页面。
+- 在 `application-detail-page.tsx` 删除“表1/表2”节点。
+- 新增独立样式类 `application-detail-cover` 控制缩略图尺寸为 `96x54`，避免影响 `approvals-page.tsx`。
+## D1 验收结论 (2026-02-12 申请详情样式优化)
+- `/applications/:id` 页面“申请人信息”“领用物料清单”两卡片中的“表1/表2”已移除。
+- 领用物料清单缩略图已缩小为 `96x54`，约为此前显示体积的一半，并保持 `object-fit: cover`。
+- 本次改动仅影响申请详情页，不影响审批页的物料缩略图显示。
+- 验证通过：`npm --prefix frontend run typecheck`、`deploy/scripts/refresh-dev.ps1`、`/healthz`、`/api/healthz`。
+
+## M1 需求确认（2026-02-12 分类树审批人字段增强）
+- 用户要求：在物料管理页（`/materials`）的分类树里新增两个字段：`审批领导设置`、`管理员设置`。
+- 用户要求：两个字段均可从人员名单中下拉选择，不再手工输入 ID。
+
+## M1 现状发现
+- 当前分类模型 `category` 仅有 `id/name/parent_id`，无审批人字段。
+- 当前分类 CRUD（`/api/v1/admin/categories`）仅支持 `name/parent_id`。
+- 当前前端 `materials-page` 分类表和新增/编辑表单均未接入人员列表与审批人字段。
+- 现有“人员列表”接口主要在 `m08_admin` 的通用 CRUD 内，权限为 `SUPER_ADMIN`；不适合直接给 `materials` 页面（ADMIN/SUPER_ADMIN）复用。
+
+## M1 实施决策
+- 数据层：在 `category` 增加两个可空字段：`leader_approver_user_id`、`admin_reviewer_user_id`（均外键到 `sys_user.id`）。
+- 接口层：
+  - 新增 `GET /api/v1/admin/categories/tree`（管理端分类树，返回审批人字段与姓名）。
+  - 新增 `GET /api/v1/admin/categories/approver-options`（返回领导候选与管理员候选列表）。
+  - 扩展 `POST/PUT /api/v1/admin/categories` 支持两个字段。
+- 校验层：
+  - `leader_approver_user_id` 必须属于 `LEADER` 或 `SUPER_ADMIN`。
+  - `admin_reviewer_user_id` 必须属于 `ADMIN` 或 `SUPER_ADMIN`。
+- 前端层：`/materials` 分类新增/编辑改为下拉选人，分类表新增两列展示“审批领导”“管理员”。
+- 兼容性：保留现有 `/api/v1/categories/tree` 给商城/普通用户使用，不暴露管理字段。
+
+## M1 实施结果（2026-02-12）
+- 后端数据模型已完成：`category` 新增
+  - `leader_approver_user_id`
+  - `admin_reviewer_user_id`
+- 后端迁移已新增：`backend/alembic/versions/202602120001_add_category_approver_fields.py`。
+- M06 接口已增强：
+  - 新增 `GET /api/v1/admin/categories/tree`（管理端分类树，含审批人字段与姓名）
+  - 新增 `GET /api/v1/admin/categories/approver-options`（领导/管理员候选列表）
+  - 扩展 `POST /api/v1/admin/categories`、`PUT /api/v1/admin/categories/{id}` 支持审批人字段
+  - 新增角色校验：领导字段仅允许 `LEADER/SUPER_ADMIN`，管理员字段仅允许 `ADMIN/SUPER_ADMIN`
+- 前端 API 已增强：
+  - `fetchAdminCategoryTree`
+  - `fetchAdminCategoryApproverOptions`
+  - 分类创建/更新入参与响应已补齐审批人字段
+- `/materials` 页面已完成：
+  - 分类新增/编辑表单增加“审批领导设置”“管理员设置”下拉框
+  - 分类表格增加“审批领导设置”“管理员设置”两列
+  - 分类数据源切换为管理端分类树接口，不影响商城使用的公开分类树接口
+- 测试已补齐：`backend/tests/test_step14_m06_inbound_inventory.py` 新增分类审批人字段与选项接口用例。
+
+## R1 需求确认（2026-02-12 17:40:29 权限治理深度优化）
+- 用户要求：权限目录不能只显示少量裸权限码，需要列出完整权限并提供中文说明。
+- 用户要求：替换用户-角色分配 需要可视化，用户维度改为账号下拉，角色改为多选下拉，并明确“覆盖替换”语义。
+- 已锁定决策：保持基础权限粒度（不做细粒度权限体系重构），通过权限字典与映射可视化提升可读性。
+
+## R1 当前发现
+- 后端 m08_admin.py 当前默认权限主要是 5 项：RBAC_ADMIN:UPDATE、INVENTORY:READ、INVENTORY:WRITE、REPORTS:READ、OUTBOUND:READ。
+- 前端 dmin-rbac-page.tsx 现状：权限目录仅标签展示；用户角色设置为“用户编号输入 + 文本角色编辑”，不满足可视化要求。
+- 现有接口已具备 GET /api/v1/admin/crud/users 与 PUT /api/v1/admin/users/{id}/roles，可复用来做账号下拉与角色保存。
+
+## R1 实施决策
+- 后端在 GET /api/v1/admin/rbac/permissions 前执行内置权限字典同步（幂等 upsert），并返回 code/zh_name/zh_description/route_refs/action_refs/is_builtin。
+- 新增 GET /api/v1/admin/users/{id}/roles 用于前端预填当前用户角色。
+- 前端将“权限目录”改为可视化表格并增加“权限使用明细”，将“用户角色设置”改为账号下拉 + 角色多选下拉。
+
+## F-P1 发现与决策 (2026-02-12 17:47:25)
+- 现状：rontend/src/pages/admin-rbac-page.tsx 仍保留旧版“用户编号+文本角色列表”逻辑，且存在 parsePositiveInteger/parseRoleList 未定义引用，页面当前不可稳定通过 typecheck。
+- 已有基础：后端已支持 /api/v1/admin/rbac/permissions 扩展字段（code/zh_name/zh_description/route_refs/action_refs/is_builtin）与 GET /api/v1/admin/users/{id}/roles。
+- 本轮决策：
+  1. 保留“角色绑定（文本）”作为高级模式，并增加风险说明；
+  2. 新增“用户角色可视化分配”卡片：账号下拉 + 角色多选 + 自动回填当前角色；
+  3. 权限目录改为表格化展示，并增加“页面引用/按钮引用”两类明细；
+  4. 不改接口契约，仅补齐前端消费逻辑与样式。
+
+## F-P2 实施结论 (2026-02-12 17:54:14)
+- 权限目录已从“裸权限码标签”升级为可视化表格，字段包含：权限码、中文名称、中文说明、资源、动作、页面引用数、按钮引用数、是否内置。
+- 新增“权限使用明细视图”：按页面映射与按钮映射分别展示权限码引用，便于直观审计。
+- 用户角色设置改为“用户账号下拉 + 角色多选下拉”，并在切换用户后自动预填当前角色。
+- 保留“角色绑定（高级文本模式）”作为兜底能力，并增加了优先使用可视化赋权的提示。
+- 后端已提供并被前端消费：`GET /api/v1/admin/users/{id}/roles`。
+
+## F-E1 根因定位 (2026-02-12 18:06:07)
+- 现象：浏览器提示 `Failed to load resource: 400 (Bad Request)`。
+- 根因：`frontend/src/pages/admin-rbac-page.tsx` 调用 `fetchAdminCrudResource(accessToken, "users", { pageSize: 500 })`。
+- 约束：后端 `backend/app/api/v1/routers/m08_admin.py` 对 `page_size` 限制 `le=100`。
+- 结论：前端分页参数越界触发请求校验失败，返回 400。
+
+## F-E2 修复结论 (2026-02-12 18:11:06)
+- 400 错误由前端查询参数越界触发：`page_size=500` 超过后端限制 `le=100`。
+- 现已将用户列表请求参数调整为 `pageSize=100`，与后端契约一致。
+- 此修复不改变业务逻辑，仅修复接口调用参数。
+
+## F-M1 发现与决策 (2026-02-12 18:14:29)
+- 现状：用户角色分配控件使用原生 `select multiple`，在桌面端通常需要 Ctrl/Shift 辅助键，用户感知为“无法多选”。
+- 决策：改为复选框列表（checkbox group）实现可视化多选，点击即选中/取消；保留覆盖语义与自动预填逻辑。
+- 影响范围：仅前端 RBAC 页面与样式，不改后端接口。
+
+## F-M2 实施结论 (2026-02-12 18:26:42)
+- 交互改造：将“角色列表”从 `select[multiple]` 改为 `checkbox` 分组，用户可直接点选多角色。
+- 业务保持：用户切换后的角色预填、覆盖保存语义、后端接口均保持不变。
+- 可用性提升：消除原生多选下拉的键盘依赖导致的“看起来不能多选”问题。
+
+## 2026-02-12 新增需求分析（申请回退 + 出库可见性）
+- 需求1：我的申请中，领导驳回单需可“回退到购物车”，并允许修改物料数量后重新提交。
+- 需求2：管理员审批通过后在“出库执行”不可见，当前代码根因不是权限，而是状态机：序列号物料审批后停留 `ADMIN_APPROVED`，需分配资产后才进入 `READY_OUTBOUND`。
+- 实施决策：
+  1. 保留状态机不变（避免错误直接出库），但在出库队列展示 `ADMIN_APPROVED` 记录，并明确标注“待分配资产”。
+  2. “回退到购物车”通过申请详情数据回填购物车（用户维度存储），不影响他人购物车。
+  3. 回填使用申请详情里的物料字段构造购物车条目，数量按申请单回填，可继续编辑后提交。
+
+## 2026-02-12 实施结论（申请回退 + 出库可见性）
+- 购物车已具备批量回填接口，且仍按用户ID隔离存储。
+- `LEADER_REJECTED` 单据可从“我的申请”一键回退购物车，并跳转到 `/store/cart` 修改后重提。
+- `GET /applications/{id}` 已补充回填所需字段：`category_id/reference_price/stock_mode/safety_stock_threshold/available_stock`。
+- 出库队列已将 `ADMIN_APPROVED` 纳入可见范围，并在前端明确提示“待分配资产”，避免误判为权限异常。
+- 出库执行提交前对 `ADMIN_APPROVED` 申请做前置拦截提示，不改变原状态机。

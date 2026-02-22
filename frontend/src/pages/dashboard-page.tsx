@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import {
+  ShoppingBag,
+  Wrench,
+  RotateCcw,
+  Box,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 
 import {
   AuthApiError,
@@ -85,133 +93,163 @@ export function DashboardPage(): JSX.Element {
     return Math.max(1, Math.ceil(announcements.meta.total / announcements.meta.pageSize));
   }, [announcements]);
 
+  if (isLoading) {
+    return (
+      <div className="dashboard-loading">
+        <div className="dashboard-loading__spinner" />
+        <p>正在加载工作台数据...</p>
+      </div>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <div className="dashboard-error">
+        <p>{errorMessage}</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="page-stack">
-      <section className="dashboard-hero app-shell__panel" aria-label="首页横幅">
+    <div className="dashboard-container">
+      {/* Hero Banner */}
+      <section className="dashboard-hero" aria-label="首页横幅">
         <div className="page-panel-head">
-          <p className="app-shell__section-label">首页横幅</p>
-          {!isLoading && !errorMessage && hero ? (
+          {hero ? (
             <>
               <h2 className="app-shell__panel-title">{hero.title}</h2>
               <p className="app-shell__panel-copy">{hero.subtitle || "暂无副标题。"}</p>
             </>
           ) : null}
         </div>
-        {isLoading ? (
-          <p className="app-shell__panel-copy">正在加载首页横幅...</p>
-        ) : errorMessage ? (
-          <p className="auth-error" role="alert">
-            {errorMessage}
-          </p>
-        ) : hero ? (
-          <>
-            <div className="dashboard-hero__actions">
-              {hero.linkUrl ? (
-                <Link className="dashboard-link" to={hero.linkUrl}>
-                  查看活动
-                </Link>
-              ) : null}
+      </section>
+
+      <div className="dashboard-grid">
+        <div className="dashboard-grid__main">
+          {/* Announcements */}
+          <section className="dashboard-card" aria-label="公告栏">
+            <div className="dashboard-card__header">
+              <span className="app-shell__section-label">公告栏</span>
+              <h3 className="app-shell__card-title">最新公告</h3>
             </div>
-          </>
-        ) : (
-          <p className="app-shell__panel-copy">暂无横幅内容。</p>
-        )}
-      </section>
+            <div className="dashboard-card__content">
+              {!announcements || announcements.items.length === 0 ? (
+                <p className="app-shell__card-copy">当前暂无公告。</p>
+              ) : (
+                <>
+                  <ul className="dashboard-list">
+                    {announcements.items.map((item) => (
+                      <li key={item.id} className="dashboard-list__item">
+                        <div className="dashboard-list__main">
+                          <p className="dashboard-list__title">{item.title}</p>
+                        </div>
+                        <span className="dashboard-list__meta">{toDateLabel(item.publishedAt)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <nav className="dashboard-pagination" aria-label="公告分页">
+                    <button
+                      className="dashboard-pagination__btn"
+                      type="button"
+                      onClick={() => setPage((current) => Math.max(1, current - 1))}
+                      disabled={page <= 1}
+                    >
+                      <ChevronLeft size={16} />
+                      上一页
+                    </button>
+                    <span className="dashboard-pagination__label">
+                      第 {page} / {totalPages} 页
+                    </span>
+                    <button
+                      className="dashboard-pagination__btn"
+                      type="button"
+                      onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                      disabled={page >= totalPages}
+                    >
+                      下一页
+                      <ChevronRight size={16} />
+                    </button>
+                  </nav>
+                </>
+              )}
+            </div>
+          </section>
 
-      <section className="app-shell__grid" aria-label="工作台区块">
-        <article className="app-shell__card" aria-label="公告栏">
-          <div className="page-card-head">
-            <p className="app-shell__section-label">公告栏</p>
-            <h3 className="app-shell__card-title">最新公告</h3>
-          </div>
-          {isLoading ? (
-            <p className="app-shell__card-copy">正在加载公告...</p>
-          ) : errorMessage ? (
-            <p className="auth-error" role="alert">
-              {errorMessage}
-            </p>
-          ) : !announcements || announcements.items.length === 0 ? (
-            <p className="app-shell__card-copy">当前暂无公告。</p>
-          ) : (
-            <>
-              <ul className="dashboard-list">
-                {announcements.items.map((item) => (
-                  <li key={item.id} className="dashboard-list__item">
-                    <p className="dashboard-list__title">{item.title}</p>
-                    <p className="dashboard-list__meta">{toDateLabel(item.publishedAt)}</p>
-                    <p className="dashboard-list__content">{item.content}</p>
-                  </li>
-                ))}
-              </ul>
-              <nav className="dashboard-pagination" aria-label="公告分页">
-                <button
-                  className="app-shell__header-action"
-                  type="button"
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                  disabled={page <= 1}
-                >
-                  上一页
-                </button>
-                <span className="dashboard-pagination__label">
-                  第 {page} / {totalPages} 页
-                </span>
-                <button
-                  className="app-shell__header-action"
-                  type="button"
-                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-                  disabled={page >= totalPages}
-                >
-                  下一页
-                </button>
-              </nav>
-            </>
-          )}
-        </article>
+          {/* Quick Actions */}
+          <section className="dashboard-card" aria-label="快捷操作">
+            <div className="dashboard-card__header">
+              <span className="app-shell__section-label">快捷操作</span>
+              <h3 className="app-shell__card-title">快速发起流程</h3>
+            </div>
+            <div className="dashboard-card__content dashboard-actions-grid">
+              <Link to="/store" className="dashboard-action-card action-blue">
+                <div className="dashboard-action-icon">
+                  <ShoppingBag size={24} />
+                </div>
+                <div className="dashboard-action-info">
+                  <h4>我要领用</h4>
+                  <p>申请新资产</p>
+                </div>
+              </Link>
+              <Link to="/assets/repair" className="dashboard-action-card action-red">
+                <div className="dashboard-action-icon">
+                  <Wrench size={24} />
+                </div>
+                <div className="dashboard-action-info">
+                  <h4>故障报修</h4>
+                  <p>设备维修申请</p>
+                </div>
+              </Link>
+              <Link to="/assets/return" className="dashboard-action-card action-green">
+                <div className="dashboard-action-icon">
+                  <RotateCcw size={24} />
+                </div>
+                <div className="dashboard-action-info">
+                  <h4>资产归还</h4>
+                  <p>退还闲置资产</p>
+                </div>
+              </Link>
+            </div>
+          </section>
+        </div>
 
-        <article className="app-shell__card" aria-label="我的资产">
-          <div className="page-card-head">
-            <p className="app-shell__section-label">我的资产</p>
-            <h3 className="app-shell__card-title">在用资产</h3>
-          </div>
-          {isLoading ? (
-            <p className="app-shell__card-copy">正在加载资产...</p>
-          ) : errorMessage ? (
-            <p className="auth-error" role="alert">
-              {errorMessage}
-            </p>
-          ) : !assets || assets.length === 0 ? (
-            <p className="app-shell__card-copy">当前没有分配中的资产。</p>
-          ) : (
-            <ul className="dashboard-list">
-              {assets.map((item) => (
-                <li key={item.id} className="dashboard-list__item">
-                  <p className="dashboard-list__title">{item.assetTag}</p>
-                  <p className="dashboard-list__meta">序列号：{item.sn}</p>
-                  <p className="dashboard-list__content">状态：{toAssetStatusLabel(item.status)}</p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </article>
-
-        <article className="app-shell__card" aria-label="快捷操作">
-          <div className="page-card-head">
-            <p className="app-shell__section-label">快捷操作</p>
-            <h3 className="app-shell__card-title">快速发起流程</h3>
-          </div>
-          <div className="dashboard-actions">
-            <Link className="dashboard-link" to="/store">
-              我要领用
-            </Link>
-            <Link className="dashboard-link" to="/assets/repair">
-              故障报修
-            </Link>
-            <Link className="dashboard-link" to="/assets/return">
-              资产归还
-            </Link>
-          </div>
-        </article>
-      </section>
+        <div className="dashboard-grid__side">
+          {/* My Assets */}
+          <section className="dashboard-card dashboard-assets-card" aria-label="我的资产">
+            <div className="dashboard-card__header">
+              <span className="app-shell__section-label">我的资产</span>
+              <h3 className="app-shell__card-title">在用资产</h3>
+            </div>
+            <div className="dashboard-card__content dashboard-assets-content">
+              {!assets || assets.length === 0 ? (
+                <div className="dashboard-empty-state">
+                  <div className="dashboard-empty-icon">
+                    <Box size={32} />
+                    <span className="dashboard-empty-badge">0</span>
+                  </div>
+                  <h4>当前没有分配中的资产</h4>
+                  <p>您当前名下没有任何在用资产。<br />如需申请，请点击“我要领用”。</p>
+                  <Link to="/store" className="dashboard-btn-primary">
+                    去领用
+                  </Link>
+                </div>
+              ) : (
+                <ul className="dashboard-list">
+                  {assets.map((item) => (
+                    <li key={item.id} className="dashboard-list__item">
+                      <div className="dashboard-list__main">
+                        <p className="dashboard-list__title">{item.assetTag}</p>
+                        <p className="dashboard-list__subtitle">SN: {item.sn}</p>
+                      </div>
+                      <span className="dashboard-list__status">{toAssetStatusLabel(item.status)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+        </div>
+      </div>
     </div>
   );
 }

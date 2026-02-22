@@ -54,11 +54,15 @@ class AdminAssetUpdateRequest(BaseModel):
 class AdminCategoryCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     parent_id: int | None = Field(default=None, ge=1)
+    leader_approver_user_id: int | None = Field(default=None, ge=1)
+    admin_reviewer_user_id: int | None = Field(default=None, ge=1)
 
 
 class AdminCategoryUpdateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     parent_id: int | None = Field(default=None, ge=1)
+    leader_approver_user_id: int | None = Field(default=None, ge=1)
+    admin_reviewer_user_id: int | None = Field(default=None, ge=1)
 
 
 class SkuStockInboundRequest(BaseModel):

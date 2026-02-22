@@ -76,7 +76,6 @@ export function AssetDetailPage(): JSX.Element {
     <div className="page-stack">
       <section className="app-shell__panel" aria-label="资产详情概览">
         <div className="page-panel-head">
-          <p className="app-shell__section-label">M01 资产</p>
           <h2 className="app-shell__panel-title">
             {asset ? asset.assetTag : assetId ? `资产 #${assetId}` : "资产详情"}
           </h2>

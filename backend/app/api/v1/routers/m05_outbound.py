@@ -328,7 +328,9 @@ def list_pickup_queue(
     base_stmt = (
         select(Application)
         .where(
-            Application.status == ApplicationStatus.READY_OUTBOUND,
+            Application.status.in_(
+                [ApplicationStatus.READY_OUTBOUND, ApplicationStatus.ADMIN_APPROVED]
+            ),
             Application.delivery_type == DeliveryType.PICKUP,
         )
         .order_by(Application.created_at.asc(), Application.id.asc())
@@ -346,6 +348,7 @@ def list_pickup_queue(
                 {
                     "application_id": application.id,
                     "applicant_user_id": application.applicant_user_id,
+                    "status": application.status.value,
                     "pickup_code": application.pickup_code,
                     "created_at": _to_iso8601(application.created_at),
                     "items": _serialize_items(
@@ -450,7 +453,9 @@ def list_express_queue(
     base_stmt = (
         select(Application)
         .where(
-            Application.status == ApplicationStatus.READY_OUTBOUND,
+            Application.status.in_(
+                [ApplicationStatus.READY_OUTBOUND, ApplicationStatus.ADMIN_APPROVED]
+            ),
             Application.delivery_type == DeliveryType.EXPRESS,
         )
         .order_by(Application.created_at.asc(), Application.id.asc())
@@ -468,6 +473,7 @@ def list_express_queue(
                 {
                     "application_id": application.id,
                     "applicant_user_id": application.applicant_user_id,
+                    "status": application.status.value,
                     "created_at": _to_iso8601(application.created_at),
                     "items": _serialize_items(
                         items_by_application.get(application.id, [])

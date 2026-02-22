@@ -116,6 +116,11 @@ interface ApplicationItemResponseBody {
   readonly model?: string;
   readonly spec?: string;
   readonly cover_url?: string | null;
+  readonly category_id?: number;
+  readonly reference_price?: string;
+  readonly stock_mode?: SkuStockMode;
+  readonly safety_stock_threshold?: number;
+  readonly available_stock?: number;
 }
 
 interface ApplicationAssetResponseBody {
@@ -335,6 +340,7 @@ interface NotificationTestResponseBody {
 interface OutboundPickupQueueItemResponseBody {
   readonly application_id: number;
   readonly applicant_user_id: number;
+  readonly status: string;
   readonly pickup_code: string;
   readonly created_at: string;
   readonly items: Array<{
@@ -346,6 +352,7 @@ interface OutboundPickupQueueItemResponseBody {
 interface OutboundExpressQueueItemResponseBody {
   readonly application_id: number;
   readonly applicant_user_id: number;
+  readonly status: string;
   readonly created_at: string;
   readonly items: Array<{
     readonly sku_id: number;
@@ -784,6 +791,11 @@ export interface ApplicationDetailResult {
         readonly model: string | null;
         readonly spec: string | null;
         readonly coverUrl: string | null;
+        readonly categoryId: number;
+        readonly referencePrice: string;
+        readonly stockMode: SkuStockMode;
+        readonly safetyStockThreshold: number;
+        readonly availableStock: number;
       }
     >;
   };
@@ -872,6 +884,7 @@ export interface NotificationTestResult {
 export interface OutboundPickupQueueItem {
   readonly applicationId: number;
   readonly applicantUserId: number;
+  readonly status: string;
   readonly pickupCode: string;
   readonly createdAt: string;
   readonly items: Array<{
@@ -883,6 +896,7 @@ export interface OutboundPickupQueueItem {
 export interface OutboundExpressQueueItem {
   readonly applicationId: number;
   readonly applicantUserId: number;
+  readonly status: string;
   readonly createdAt: string;
   readonly items: Array<{
     readonly skuId: number;
@@ -1354,6 +1368,10 @@ interface AdminCategoryResponseBody {
   readonly id: number;
   readonly name: string;
   readonly parent_id: number | null;
+  readonly leader_approver_user_id: number | null;
+  readonly leader_approver_name: string | null;
+  readonly admin_reviewer_user_id: number | null;
+  readonly admin_reviewer_name: string | null;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -1362,16 +1380,127 @@ export interface AdminCategoryItem {
   readonly id: number;
   readonly name: string;
   readonly parentId: number | null;
+  readonly leaderApproverUserId: number | null;
+  readonly leaderApproverName: string | null;
+  readonly adminReviewerUserId: number | null;
+  readonly adminReviewerName: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+interface AdminCategoryTreeNodeResponseBody extends AdminCategoryResponseBody {
+  readonly children: AdminCategoryTreeNodeResponseBody[];
+}
+
+export interface AdminCategoryTreeNode extends AdminCategoryItem {
+  readonly children: AdminCategoryTreeNode[];
+}
+
+interface CategoryApproverOptionResponseBody {
+  readonly id: number;
+  readonly employee_no: string;
+  readonly name: string;
+  readonly department_name: string | null;
+  readonly roles: string[];
+}
+
+interface CategoryApproverOptionsResponseBody {
+  readonly leaders: CategoryApproverOptionResponseBody[];
+  readonly admins: CategoryApproverOptionResponseBody[];
+}
+
+export interface CategoryApproverOption {
+  readonly id: number;
+  readonly employeeNo: string;
+  readonly name: string;
+  readonly departmentName: string | null;
+  readonly roles: string[];
+}
+
+export interface CategoryApproverOptions {
+  readonly leaders: CategoryApproverOption[];
+  readonly admins: CategoryApproverOption[];
 }
 
 export interface CreateAdminCategoryInput {
   readonly name: string;
   readonly parentId?: number | null;
+  readonly leaderApproverUserId?: number | null;
+  readonly adminReviewerUserId?: number | null;
 }
 
 export type UpdateAdminCategoryInput = CreateAdminCategoryInput;
+
+function mapAdminCategoryItem(input: AdminCategoryResponseBody): AdminCategoryItem {
+  return {
+    id: input.id,
+    name: input.name,
+    parentId: input.parent_id,
+    leaderApproverUserId: input.leader_approver_user_id,
+    leaderApproverName: input.leader_approver_name,
+    adminReviewerUserId: input.admin_reviewer_user_id,
+    adminReviewerName: input.admin_reviewer_name,
+    createdAt: input.created_at,
+    updatedAt: input.updated_at,
+  };
+}
+
+function mapAdminCategoryTreeNode(input: AdminCategoryTreeNodeResponseBody): AdminCategoryTreeNode {
+  return {
+    ...mapAdminCategoryItem(input),
+    children: input.children.map(mapAdminCategoryTreeNode),
+  };
+}
+
+function mapCategoryApproverOption(
+  input: CategoryApproverOptionResponseBody,
+): CategoryApproverOption {
+  return {
+    id: input.id,
+    employeeNo: input.employee_no,
+    name: input.name,
+    departmentName: input.department_name,
+    roles: input.roles,
+  };
+}
+
+export async function fetchAdminCategoryTree(
+  accessToken: string,
+): Promise<AdminCategoryTreeNode[]> {
+  assertToken(accessToken);
+  const envelope = await requestApi<AdminCategoryTreeNodeResponseBody[]>("/admin/categories/tree", {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  return (envelope.data ?? []).map(mapAdminCategoryTreeNode);
+}
+
+export async function fetchAdminCategoryApproverOptions(
+  accessToken: string,
+): Promise<CategoryApproverOptions> {
+  assertToken(accessToken);
+  const envelope = await requestApi<CategoryApproverOptionsResponseBody>(
+    "/admin/categories/approver-options",
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!envelope.data) {
+    throw new AuthApiError("INVALID_RESPONSE", "分类审批人选项响应数据为空。");
+  }
+
+  return {
+    leaders: envelope.data.leaders.map(mapCategoryApproverOption),
+    admins: envelope.data.admins.map(mapCategoryApproverOption),
+  };
+}
 
 export async function createAdminCategory(
   accessToken: string,
@@ -1387,6 +1516,8 @@ export async function createAdminCategory(
     body: JSON.stringify({
       name: input.name,
       parent_id: input.parentId ?? null,
+      leader_approver_user_id: input.leaderApproverUserId ?? null,
+      admin_reviewer_user_id: input.adminReviewerUserId ?? null,
     }),
   });
 
@@ -1394,13 +1525,7 @@ export async function createAdminCategory(
     throw new AuthApiError("INVALID_RESPONSE", "创建分类响应数据为空。");
   }
 
-  return {
-    id: envelope.data.id,
-    name: envelope.data.name,
-    parentId: envelope.data.parent_id,
-    createdAt: envelope.data.created_at,
-    updatedAt: envelope.data.updated_at,
-  };
+  return mapAdminCategoryItem(envelope.data);
 }
 
 export async function updateAdminCategory(
@@ -1418,6 +1543,8 @@ export async function updateAdminCategory(
     body: JSON.stringify({
       name: input.name,
       parent_id: input.parentId ?? null,
+      leader_approver_user_id: input.leaderApproverUserId ?? null,
+      admin_reviewer_user_id: input.adminReviewerUserId ?? null,
     }),
   });
 
@@ -1425,13 +1552,7 @@ export async function updateAdminCategory(
     throw new AuthApiError("INVALID_RESPONSE", "更新分类响应数据为空。");
   }
 
-  return {
-    id: envelope.data.id,
-    name: envelope.data.name,
-    parentId: envelope.data.parent_id,
-    createdAt: envelope.data.created_at,
-    updatedAt: envelope.data.updated_at,
-  };
+  return mapAdminCategoryItem(envelope.data);
 }
 
 export async function deleteAdminCategory(
@@ -1878,6 +1999,11 @@ export async function fetchApplicationDetail(
         model: item.model ?? null,
         spec: item.spec ?? null,
         coverUrl: item.cover_url ?? null,
+        categoryId: item.category_id ?? 0,
+        referencePrice: item.reference_price ?? "0.00",
+        stockMode: item.stock_mode ?? "SERIALIZED",
+        safetyStockThreshold: item.safety_stock_threshold ?? 0,
+        availableStock: item.available_stock ?? item.quantity,
       })),
     },
     approvalHistory: envelope.data.approval_history.map((item) => ({
@@ -2138,6 +2264,7 @@ export async function fetchOutboundPickupQueue(
     items: envelope.data.items.map((item) => ({
       applicationId: item.application_id,
       applicantUserId: item.applicant_user_id,
+      status: item.status,
       pickupCode: item.pickup_code,
       createdAt: item.created_at,
       items: item.items.map((row) => ({
@@ -2234,6 +2361,7 @@ export async function fetchOutboundExpressQueue(
     items: envelope.data.items.map((item) => ({
       applicationId: item.application_id,
       applicantUserId: item.applicant_user_id,
+      status: item.status,
       createdAt: item.created_at,
       items: item.items.map((row) => ({
         skuId: row.sku_id,
@@ -3210,6 +3338,12 @@ interface AdminRbacPermissionResponseBody {
   readonly action: string;
   readonly name: string;
   readonly description: string | null;
+  readonly code: string;
+  readonly zh_name: string;
+  readonly zh_description: string;
+  readonly route_refs: string[];
+  readonly action_refs: string[];
+  readonly is_builtin: boolean;
 }
 
 interface AdminRbacRoleResponseBody {
@@ -3235,6 +3369,14 @@ interface AdminRoleBindingsResponseBody {
 
 interface AdminUserRolesReplaceResponseBody {
   readonly user_id: number;
+  readonly roles: string[];
+}
+
+interface AdminUserRolesStateResponseBody {
+  readonly user_id: number;
+  readonly employee_no: string;
+  readonly name: string;
+  readonly department_name: string | null;
   readonly roles: string[];
 }
 
@@ -3272,6 +3414,12 @@ export interface AdminRbacPermission {
   readonly action: string;
   readonly name: string;
   readonly description: string | null;
+  readonly code: string;
+  readonly zhName: string;
+  readonly zhDescription: string;
+  readonly routeRefs: string[];
+  readonly actionRefs: string[];
+  readonly isBuiltin: boolean;
 }
 
 export interface AdminRbacRole {
@@ -3309,6 +3457,14 @@ export interface BindAdminRbacRolePermissionsResult {
 
 export interface ReplaceAdminUserRolesResult {
   readonly userId: number;
+  readonly roles: string[];
+}
+
+export interface AdminUserRoleState {
+  readonly userId: number;
+  readonly employeeNo: string;
+  readonly name: string;
+  readonly departmentName: string | null;
   readonly roles: string[];
 }
 
@@ -3362,12 +3518,19 @@ export interface ReplaceRbacUiGuardsInput {
 function mapAdminRbacPermission(
   payload: AdminRbacPermissionResponseBody,
 ): AdminRbacPermission {
+  const fallbackCode = `${payload.resource}:${payload.action}`;
   return {
     id: payload.id,
     resource: payload.resource,
     action: payload.action,
     name: payload.name,
     description: payload.description,
+    code: payload.code ?? fallbackCode,
+    zhName: payload.zh_name ?? `${payload.resource} ${payload.action}`,
+    zhDescription: payload.zh_description ?? payload.description ?? "未提供中文说明。",
+    routeRefs: payload.route_refs ?? [],
+    actionRefs: payload.action_refs ?? [],
+    isBuiltin: payload.is_builtin ?? false,
   };
 }
 
@@ -3564,6 +3727,34 @@ export async function replaceAdminUserRoles(
 
   return {
     userId: envelope.data.user_id,
+    roles: envelope.data.roles,
+  };
+}
+
+export async function fetchAdminUserRoles(
+  accessToken: string,
+  userId: number,
+): Promise<AdminUserRoleState> {
+  assertToken(accessToken);
+  const envelope = await requestApi<AdminUserRolesStateResponseBody>(
+    `/admin/users/${userId}/roles`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!envelope.data) {
+    throw new AuthApiError("INVALID_RESPONSE", "用户角色状态响应数据为空。");
+  }
+
+  return {
+    userId: envelope.data.user_id,
+    employeeNo: envelope.data.employee_no,
+    name: envelope.data.name,
+    departmentName: envelope.data.department_name,
     roles: envelope.data.roles,
   };
 }

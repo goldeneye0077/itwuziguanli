@@ -35,6 +35,7 @@ function flattenCategoryTree(tree: CategoryTreeNode[]): CategoryTreeNode[] {
 export function StorePage(): JSX.Element {
   const { state } = useAuthSession();
   const accessToken = state.accessToken;
+  const currentUserId = state.user?.id ?? null;
 
   const [categories, setCategories] = useState<CategoryTreeNode[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | undefined>();
@@ -47,7 +48,7 @@ export function StorePage(): JSX.Element {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const { cartItems, cartTotalQuantity, addSkuToCart, setCartQuantity, clearCart } =
-    useM02Cart();
+    useM02Cart(currentUserId);
   const allCategories = useMemo(() => flattenCategoryTree(categories), [categories]);
 
   useEffect(() => {
@@ -133,7 +134,6 @@ export function StorePage(): JSX.Element {
     <div className="page-stack">
       <section className="app-shell__panel" aria-label="商城筛选区">
         <div className="page-panel-head">
-          <p className="app-shell__section-label">M02 商城</p>
           <h2 className="app-shell__panel-title">物资领用商城</h2>
           <p className="app-shell__panel-copy">
             按分类浏览物料，加入购物车后可在右侧结算区进行智能预检与提交申请。

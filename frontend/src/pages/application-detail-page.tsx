@@ -115,7 +115,6 @@ export function ApplicationDetailPage(): JSX.Element {
     <div className="page-stack">
       <section className="app-shell__panel" aria-label="申请单详情头部">
         <div className="page-panel-head">
-          <p className="app-shell__section-label">M03 申请单详情</p>
           <h2 className="app-shell__panel-title">申请单 #{applicationId}</h2>
           <p className="app-shell__panel-copy">查看申请人信息、领用物料明细与审批历史。</p>
         </div>
@@ -137,7 +136,6 @@ export function ApplicationDetailPage(): JSX.Element {
         <>
           <section className="app-shell__card" aria-label="申请人信息表">
             <div className="page-card-head">
-              <p className="app-shell__section-label">表1</p>
               <h3 className="app-shell__card-title">申请人信息</h3>
             </div>
             <div className="page-table-wrap">
@@ -184,7 +182,6 @@ export function ApplicationDetailPage(): JSX.Element {
 
           <section className="app-shell__card" aria-label="领用物料清单表">
             <div className="page-card-head">
-              <p className="app-shell__section-label">表2</p>
               <h3 className="app-shell__card-title">领用物料清单</h3>
             </div>
             <div className="page-table-wrap">
@@ -204,7 +201,7 @@ export function ApplicationDetailPage(): JSX.Element {
                     <tr key={item.id}>
                       <td>
                         {item.coverUrl ? (
-                          <img className="inventory-cover" src={item.coverUrl} alt={`${item.brand ?? ""} ${item.model ?? ""}`.trim()} />
+                          <img className="application-detail-cover" src={item.coverUrl} alt={`${item.brand ?? ""} ${item.model ?? ""}`.trim()} />
                         ) : (
                           <span className="muted-text">无图</span>
                         )}
@@ -276,3 +273,4 @@ export function ApplicationDetailPage(): JSX.Element {
     </div>
   );
 }
+

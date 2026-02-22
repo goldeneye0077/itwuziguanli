@@ -1,16 +1,27 @@
-﻿import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
-import { AuthApiError, fetchMyApplications, type MyApplicationSummary } from "../api";
+import {
+  AuthApiError,
+  fetchApplicationDetail,
+  fetchMyApplications,
+  type MyApplicationSummary,
+  type SkuItem,
+} from "../api";
 import { useAuthSession } from "../stores";
+import { useM02Cart } from "./m02-cart";
 import { toApplicationStatusLabel, toDateLabel, toDeliveryTypeLabel } from "./page-helpers";
 
 export function ApplicationsPage(): JSX.Element {
+  const navigate = useNavigate();
   const { state } = useAuthSession();
   const accessToken = state.accessToken;
+  const currentUserId = state.user?.id ?? null;
+  const { replaceCartItems } = useM02Cart(currentUserId);
 
   const [items, setItems] = useState<MyApplicationSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRollingBackAppId, setIsRollingBackAppId] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const loadApplications = useCallback(async (): Promise<void> => {
@@ -36,11 +47,62 @@ export function ApplicationsPage(): JSX.Element {
     void loadApplications();
   }, [loadApplications]);
 
+  async function rollbackToCart(applicationId: number): Promise<void> {
+    if (!accessToken) {
+      setErrorMessage("会话令牌缺失，请重新登录。");
+      return;
+    }
+
+    setIsRollingBackAppId(applicationId);
+    setErrorMessage(null);
+    try {
+      const detail = await fetchApplicationDetail(accessToken, applicationId);
+      const entries = detail.application.items.map((item) => {
+        const normalizedBrand = item.brand?.trim() ? item.brand : "未知品牌";
+        const normalizedModel = item.model?.trim() ? item.model : `SKU-${item.skuId}`;
+        const normalizedSpec = item.spec?.trim() ? item.spec : "-";
+        const normalizedQuantity = Math.max(1, Math.floor(item.quantity));
+        const normalizedAvailable = Math.max(
+          normalizedQuantity,
+          Math.floor(item.availableStock),
+          1,
+        );
+        const sku: SkuItem = {
+          id: item.skuId,
+          categoryId: item.categoryId,
+          brand: normalizedBrand,
+          model: normalizedModel,
+          spec: normalizedSpec,
+          referencePrice: item.referencePrice,
+          coverUrl: item.coverUrl,
+          stockMode: item.stockMode,
+          safetyStockThreshold: item.safetyStockThreshold,
+          availableStock: normalizedAvailable,
+        };
+        return {
+          sku,
+          quantity: normalizedQuantity,
+        };
+      });
+
+      if (entries.length === 0) {
+        setErrorMessage("该申请单没有可回退的物料明细。");
+        return;
+      }
+
+      replaceCartItems(entries);
+      navigate("/store/cart");
+    } catch (error) {
+      setErrorMessage(error instanceof AuthApiError ? error.message : "回退购物车失败。");
+    } finally {
+      setIsRollingBackAppId(null);
+    }
+  }
+
   return (
     <div className="page-stack">
       <section className="app-shell__panel" aria-label="我的申请说明">
         <div className="page-panel-head">
-          <p className="app-shell__section-label">M02 我的申请</p>
           <h2 className="app-shell__panel-title">我的申请单</h2>
           <p className="app-shell__panel-copy">仅展示当前登录用户提交的申请。</p>
         </div>
@@ -79,9 +141,23 @@ export function ApplicationsPage(): JSX.Element {
                   取件码：{item.pickupCode} - 物料：
                   {item.itemsSummary.map((entry) => `${entry.brand} ${entry.model} x${entry.quantity}`).join("、")}
                 </p>
-                <Link className="dashboard-link" to={`/applications/${item.id}`}>
-                  查看详情
-                </Link>
+                <div className="page-actions">
+                  <Link className="dashboard-link" to={`/applications/${item.id}`}>
+                    查看详情
+                  </Link>
+                  {item.status === "LEADER_REJECTED" ? (
+                    <button
+                      className="app-shell__header-action"
+                      type="button"
+                      disabled={isRollingBackAppId === item.id}
+                      onClick={() => {
+                        void rollbackToCart(item.id);
+                      }}
+                    >
+                      {isRollingBackAppId === item.id ? "回退中..." : "回退到购物车"}
+                    </button>
+                  ) : null}
+                </div>
               </li>
             ))}
           </ul>

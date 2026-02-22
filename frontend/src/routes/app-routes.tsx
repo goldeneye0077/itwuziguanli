@@ -249,7 +249,7 @@ function HeaderClock(): JSX.Element {
     <div className="app-shell__clock" aria-label="当前时间">
       <span className="app-shell__clock-date">{dateFormatter.format(now)}</span>
       <span className="app-shell__clock-sep" aria-hidden="true">
-        ·
+        |
       </span>
       <span className="app-shell__clock-time">{timeFormatter.format(now)}</span>
     </div>
@@ -334,18 +334,24 @@ function AppShellLayout({ children }: { readonly children: ReactNode }): JSX.Ele
 
         <div className="app-shell__header-meta">
           <HeaderClock />
-          <span className="app-shell__status">
-            {state.user?.name ?? "未知用户"} | {toRoleListLabel(userRoles)}
-          </span>
-          <button className="app-shell__header-action" type="button" onClick={handleLogout}>
-            退出登录
+          <div className="app-shell__user-info">
+             <div className="app-shell__user-avatar">
+               <span className="app-shell__user-icon">👤</span>
+             </div>
+             <div className="app-shell__user-details">
+               <span className="app-shell__user-name">{state.user?.name ?? "Administrator"}</span>
+               <span className="app-shell__user-role">{toRoleListLabel(userRoles)}</span>
+             </div>
+          </div>
+          <button className="app-shell__logout-btn" type="button" onClick={handleLogout}>
+            <LogOut size={16} />
+            <span>退出登录</span>
           </button>
         </div>
       </header>
 
-      <div className="app-shell__main">
+      <div className="app-shell__body">
         <aside className="app-shell__nav" aria-label="主导航">
-          <p className="app-shell__section-label">导航</p>
           <ul className="app-shell__nav-list">
             {visibleNavItems.map((item) => {
               const isActive = isNavItemActive(item.route, location.pathname);
@@ -355,7 +361,7 @@ function AppShellLayout({ children }: { readonly children: ReactNode }): JSX.Ele
                   <Link
                     to={item.route}
                     className={
-                      isActive ? "app-shell__nav-item is-active" : "app-shell__nav-item"
+                      isActive ? "app-shell__nav-link active" : "app-shell__nav-link"
                     }
                     aria-current={isActive ? "page" : undefined}
                   >
@@ -368,7 +374,7 @@ function AppShellLayout({ children }: { readonly children: ReactNode }): JSX.Ele
           </ul>
         </aside>
 
-        <main className="app-shell__content" aria-label="页面内容">
+        <main className="app-shell__main" aria-label="页面内容">
           {children}
         </main>
       </div>
