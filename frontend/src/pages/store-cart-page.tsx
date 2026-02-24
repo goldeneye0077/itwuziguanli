@@ -49,6 +49,30 @@ function hasManualAddressValue(address: ManualAddressForm): boolean {
   );
 }
 
+function extractSkuIdsFromError(error: AuthApiError): number[] {
+  const details = error.details;
+  if (!details || typeof details !== "object") {
+    return [];
+  }
+
+  const payload = details as { sku_id?: unknown; sku_ids?: unknown };
+  const result: number[] = [];
+
+  if (typeof payload.sku_id === "number" && Number.isFinite(payload.sku_id)) {
+    result.push(Math.trunc(payload.sku_id));
+  }
+
+  if (Array.isArray(payload.sku_ids)) {
+    payload.sku_ids.forEach((item) => {
+      if (typeof item === "number" && Number.isFinite(item)) {
+        result.push(Math.trunc(item));
+      }
+    });
+  }
+
+  return Array.from(new Set(result.filter((item) => item > 0)));
+}
+
 export function StoreCartPage(): JSX.Element {
   const navigate = useNavigate();
   const { state } = useAuthSession();
@@ -241,6 +265,17 @@ export function StoreCartPage(): JSX.Element {
       clearCart();
       setAiPrecheck(null);
     } catch (error) {
+      if (
+        error instanceof AuthApiError &&
+        (error.code === "SKU_NOT_VISIBLE" || error.code === "SKU_NOT_FOUND")
+      ) {
+        const skuIds = extractSkuIdsFromError(error);
+        if (skuIds.length) {
+          skuIds.forEach((skuId) => setCartQuantity(skuId, 0));
+          setErrorMessage(`以下物料当前不可提交，已从购物车移除：${skuIds.join("、")}`);
+          return;
+        }
+      }
       setErrorMessage(error instanceof AuthApiError ? error.message : "提交申请失败。");
     } finally {
       setIsSubmitting(false);
@@ -317,7 +352,7 @@ export function StoreCartPage(): JSX.Element {
                           <span className="muted-text">无图</span>
                         )}
                       </td>
-                      <td>{`${entry.sku.brand} ${entry.sku.model}`}</td>
+                      <td>{entry.sku.name || `${entry.sku.brand} ${entry.sku.model}`.trim()}</td>
                       <td>{entry.sku.model}</td>
                       <td>{entry.sku.brand}</td>
                       <td>{entry.sku.spec}</td>

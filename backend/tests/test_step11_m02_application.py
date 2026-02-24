@@ -72,6 +72,17 @@ def _seed_data(session: Session) -> None:
                 cover_url=None,
                 safety_stock_threshold=1,
             ),
+            Sku(
+                id=3,
+                category_id=2,
+                is_visible=False,
+                brand="Hidden",
+                model="RetiredModel",
+                spec="legacy",
+                reference_price=Decimal("1.00"),
+                cover_url=None,
+                safety_stock_threshold=0,
+            ),
         ]
     )
     session.add_all(
@@ -211,6 +222,20 @@ def test_categories_and_sku_filters_with_pagination() -> None:
     assert sku_payload["data"]["items"][0]["available_stock"] == 2
 
 
+def test_sku_list_hides_invisible_items() -> None:
+    with _build_client() as client:
+        access_token = _login_and_get_access_token(client)
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        response = client.get("/api/v1/skus?page=1&page_size=20", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    sku_ids = [item["id"] for item in payload["data"]["items"]]
+    assert 3 not in sku_ids
+
+
 def test_address_create_and_list() -> None:
     with _build_client() as client:
         access_token = _login_and_get_access_token(client)
@@ -328,6 +353,28 @@ def test_application_express_requires_address_data() -> None:
     payload = response.json()
     assert payload["success"] is False
     assert payload["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_application_create_rejects_invisible_sku() -> None:
+    with _build_client() as client:
+        access_token = _login_and_get_access_token(client)
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        response = client.post(
+            "/api/v1/applications",
+            headers=headers,
+            json={
+                "type": "APPLY",
+                "delivery_type": "PICKUP",
+                "items": [{"sku_id": 3, "quantity": 1}],
+            },
+        )
+
+    assert response.status_code == 409
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "SKU_NOT_VISIBLE"
+    assert payload["error"]["details"]["sku_ids"] == [3]
 
 
 def test_ai_precheck_response_shape() -> None:

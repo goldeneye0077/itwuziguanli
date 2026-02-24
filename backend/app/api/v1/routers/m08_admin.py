@@ -827,6 +827,7 @@ def _serialize_sku(sku: Sku) -> dict[str, object]:
     return {
         "id": sku.id,
         "category_id": sku.category_id,
+        "name": sku.name,
         "brand": sku.brand,
         "model": sku.model,
         "spec": sku.spec,
@@ -975,6 +976,7 @@ def _list_skus(
         if numeric_keyword is None:
             stmt = stmt.where(
                 or_(
+                    func.lower(Sku.name).like(pattern),
                     func.lower(Sku.brand).like(pattern),
                     func.lower(Sku.model).like(pattern),
                     func.lower(Sku.spec).like(pattern),
@@ -983,6 +985,7 @@ def _list_skus(
         else:
             stmt = stmt.where(
                 or_(
+                    func.lower(Sku.name).like(pattern),
                     func.lower(Sku.brand).like(pattern),
                     func.lower(Sku.model).like(pattern),
                     func.lower(Sku.spec).like(pattern),
@@ -1241,11 +1244,22 @@ def _create_sku(db: Session, payload: dict[str, object]) -> dict[str, object]:
             _required_text(payload, "stock_mode"), field_name="stock_mode"
         )
 
+    brand = _required_text(payload, "brand", max_length=64)
+    model = _required_text(payload, "model", max_length=128)
+    name = _optional_text(payload, "name", max_length=128) or f"{brand} {model}".strip()
+    if not name:
+        raise AppException(
+            code="VALIDATION_ERROR",
+            message="缺少必填字段。",
+            details={"field": "name"},
+        )
+
     sku = Sku(
         id=_next_bigint_id(db, Sku),
         category_id=category_id,
-        brand=_required_text(payload, "brand", max_length=64),
-        model=_required_text(payload, "model", max_length=128),
+        name=name,
+        brand=brand,
+        model=model,
         spec=_required_text(payload, "spec", max_length=255),
         reference_price=_required_decimal(payload, "reference_price"),
         cover_url=_optional_text(payload, "cover_url", max_length=512),
@@ -1269,10 +1283,20 @@ def _update_sku(
         category_id = _required_int(payload, "category_id")
         _require_existing_category(db, category_id)
         sku.category_id = category_id
+    next_brand = sku.brand
+    next_model = sku.model
     if "brand" in payload:
-        sku.brand = _required_text(payload, "brand", max_length=64)
+        next_brand = _required_text(payload, "brand", max_length=64)
     if "model" in payload:
-        sku.model = _required_text(payload, "model", max_length=128)
+        next_model = _required_text(payload, "model", max_length=128)
+    if "name" in payload:
+        sku.name = _required_text(payload, "name", max_length=128)
+    elif (not (sku.name or "").strip()) and ("brand" in payload or "model" in payload):
+        fallback_name = f"{next_brand} {next_model}".strip()
+        if fallback_name:
+            sku.name = fallback_name
+    sku.brand = next_brand
+    sku.model = next_model
     if "spec" in payload:
         sku.spec = _required_text(payload, "spec", max_length=255)
     if "reference_price" in payload:

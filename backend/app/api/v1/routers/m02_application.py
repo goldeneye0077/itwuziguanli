@@ -1,4 +1,4 @@
-"""M02 router implementation: asset application."""
+﻿"""M02 router implementation: asset application."""
 
 from __future__ import annotations
 
@@ -175,12 +175,14 @@ def _sku_query(
     keyword: str | None,
 ) -> Select[tuple[Sku]]:
     stmt: Select[tuple[Sku]] = select(Sku)
+    stmt = stmt.where(Sku.is_visible.is_(True))
     if category_id is not None:
         stmt = stmt.where(Sku.category_id == category_id)
     if keyword:
         token = f"%{keyword}%"
         stmt = stmt.where(
             or_(
+                Sku.name.ilike(token),
                 Sku.brand.ilike(token),
                 Sku.model.ilike(token),
                 Sku.spec.ilike(token),
@@ -259,6 +261,7 @@ def list_skus(
                 {
                     "id": sku.id,
                     "category_id": sku.category_id,
+                    "name": sku.name,
                     "brand": sku.brand,
                     "model": sku.model,
                     "spec": sku.spec,
@@ -386,6 +389,7 @@ def list_my_applications(
         item_map.setdefault(int(item.application_id), []).append(
             {
                 "sku_id": int(item.sku_id),
+                "name": sku.name,
                 "brand": sku.brand,
                 "model": sku.model,
                 "spec": sku.spec,
@@ -393,7 +397,9 @@ def list_my_applications(
                 "quantity": int(item.quantity),
             }
         )
-        title_map.setdefault(int(item.application_id), []).append(sku.model or sku.brand)
+        title_map.setdefault(int(item.application_id), []).append(
+            (sku.name or sku.model or sku.brand)
+        )
 
     payload = []
     for application in rows:
@@ -441,7 +447,7 @@ def create_application(
             if address is None:
                 raise AppException(
                     code="RESOURCE_NOT_FOUND",
-                    message="快递地址不存在。",
+                    message="��ݵ�ַ�����ڡ�",
                 )
             resolved_address = _serialize_address(address)
         elif payload.express_address is not None:
@@ -470,6 +476,28 @@ def create_application(
         else context.user.job_title
     )
 
+    requested_sku_ids = sorted({int(item.sku_id) for item in payload.items})
+    sku_rows = db.scalars(select(Sku).where(Sku.id.in_(requested_sku_ids))).all()
+    sku_by_id = {int(row.id): row for row in sku_rows}
+
+    missing_sku_ids = [sku_id for sku_id in requested_sku_ids if sku_id not in sku_by_id]
+    if missing_sku_ids:
+        raise AppException(
+            code="SKU_NOT_FOUND",
+            message="���ϲ����ڡ�",
+            details={"sku_ids": missing_sku_ids},
+        )
+
+    hidden_sku_ids = [
+        sku_id for sku_id in requested_sku_ids if not bool(sku_by_id[sku_id].is_visible)
+    ]
+    if hidden_sku_ids:
+        raise AppException(
+            code="SKU_NOT_VISIBLE",
+            message="�����������¼ܣ���ˢ�¹��ﳵ�����ԡ�",
+            details={"sku_ids": hidden_sku_ids},
+        )
+
     now = datetime.now(UTC).replace(tzinfo=None)
     application = Application(
         id=_next_bigint_id(db, Application),
@@ -496,11 +524,9 @@ def create_application(
     next_stock_flow_id = _next_bigint_id(db, StockFlow)
 
     for item in payload.items:
-        sku = db.get(Sku, item.sku_id)
-        if sku is None:
-            raise AppException(code="SKU_NOT_FOUND", message="物料不存在。")
+        sku = sku_by_id[int(item.sku_id)]
 
-        title_labels.append((sku.model or sku.brand).strip())
+        title_labels.append((sku.name or sku.model or sku.brand).strip())
 
         item_record = ApplicationItem(
             id=_next_bigint_id(db, ApplicationItem),
@@ -541,7 +567,7 @@ def create_application(
         if len(available_assets) < item.quantity:
             raise AppException(
                 code="STOCK_INSUFFICIENT",
-                message="可用库存不足。",
+                message="���ÿ�治�㡣",
                 details={
                     "sku_id": item.sku_id,
                     "requested": item.quantity,
@@ -552,8 +578,11 @@ def create_application(
         for asset in available_assets:
             asset.status = AssetStatus.LOCKED
             asset.locked_application_id = application.id
-            mapping = ApplicationAsset(application_id=application.id, asset_id=asset.id)
-            mapping.id = next_application_asset_id
+            mapping = ApplicationAsset(
+                id=next_application_asset_id,
+                application_id=application.id,
+                asset_id=asset.id,
+            )
             next_application_asset_id += 1
             db.add(mapping)
             relation_rows.append(mapping)
@@ -583,7 +612,6 @@ def create_application(
         _serialize_application(application, item_rows, relation_rows, resolved_address)
     )
 
-
 @router.post("/ai/precheck", response_model=ApiResponse)
 def ai_precheck(
     payload: AiPrecheckRequest,
@@ -606,3 +634,4 @@ def ai_precheck(
             "reason": reason,
         }
     )
+

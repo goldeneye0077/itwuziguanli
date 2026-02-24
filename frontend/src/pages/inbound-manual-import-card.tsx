@@ -221,7 +221,7 @@ export function InboundManualImportCard(props: {
         return;
       }
 
-      const skuLabel = `#${selectedSku.id} ${selectedSku.brand} ${selectedSku.model}`;
+      const skuLabel = `#${selectedSku.id} ${selectedSku.name} (${selectedSku.brand} ${selectedSku.model})`;
 
       if (selectedSku.stockMode === "SERIALIZED") {
         if (snItems.length === 0) {
@@ -331,7 +331,7 @@ export function InboundManualImportCard(props: {
         options.push({
           key: `sku-${sku.id}`,
           value: String(sku.id),
-          label: `${indent(category.depth + 1)}#${sku.id} · ${sku.brand} ${sku.model} · ${sku.spec}`,
+          label: `${indent(category.depth + 1)}#${sku.id} · ${sku.name} · ${sku.spec}`,
         });
       });
     });
@@ -352,7 +352,7 @@ export function InboundManualImportCard(props: {
         options.push({
           key: `sku-${sku.id}`,
           value: String(sku.id),
-          label: `  #${sku.id} · ${sku.brand} ${sku.model} · ${sku.spec}`,
+          label: `  #${sku.id} · ${sku.name} · ${sku.spec}`,
         });
       });
     }

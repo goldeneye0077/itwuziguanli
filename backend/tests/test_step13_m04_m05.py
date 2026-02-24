@@ -269,6 +269,16 @@ def _seed_data(session: Session) -> None:
                 locked_application_id=None,
                 inbound_at=now,
             ),
+            Asset(
+                id=14,
+                asset_tag="AT-014",
+                sku_id=1,
+                sn="SN-014",
+                status=AssetStatus.IN_STOCK,
+                holder_user_id=None,
+                locked_application_id=None,
+                inbound_at=now,
+            ),
         ]
     )
 
@@ -279,6 +289,40 @@ def _seed_data(session: Session) -> None:
             ApplicationAsset(id=4003, application_id=203, asset_id=13),
         ]
     )
+
+    session.add_all(
+        [
+            StockFlow(
+                id=1000001,
+                asset_id=11,
+                action=StockFlowAction.LOCK,
+                operator_user_id=2,
+                related_application_id=201,
+                occurred_at=now,
+                meta_json={"event": "assign_assets"},
+            ),
+            StockFlow(
+                id=1000002,
+                asset_id=12,
+                action=StockFlowAction.LOCK,
+                operator_user_id=2,
+                related_application_id=202,
+                occurred_at=now,
+                meta_json={"event": "assign_assets"},
+            ),
+            StockFlow(
+                id=1000003,
+                asset_id=13,
+                action=StockFlowAction.LOCK,
+                operator_user_id=2,
+                related_application_id=203,
+                occurred_at=now,
+                meta_json={"event": "assign_assets"},
+            ),
+        ]
+    )
+    session.flush()
+
     session.add(
         SkuStockFlow(
             id=9001,
@@ -454,6 +498,11 @@ def test_m05_outbound_pickup_and_ship_transitions() -> None:
             headers=headers,
         )
 
+        confirm_pickup_blocked = client.post(
+            "/api/v1/outbound/confirm-pickup",
+            headers=headers,
+            json={"verify_type": "APPLICATION_ID", "value": "205"},
+        )
         confirm_pickup = client.post(
             "/api/v1/outbound/confirm-pickup",
             headers=headers,
@@ -488,6 +537,12 @@ def test_m05_outbound_pickup_and_ship_transitions() -> None:
         for item in express_payload["data"]["items"]
     }
     assert express_items == {202: "READY_OUTBOUND", 206: "ADMIN_APPROVED"}
+
+    assert confirm_pickup_blocked.status_code == 200
+    confirm_pickup_blocked_payload = confirm_pickup_blocked.json()
+    assert confirm_pickup_blocked_payload["success"] is True
+    assert confirm_pickup_blocked_payload["data"]["application_id"] == 205
+    assert confirm_pickup_blocked_payload["data"]["status"] == "OUTBOUNDED"
 
     assert confirm_pickup.status_code == 200
     confirm_payload = confirm_pickup.json()

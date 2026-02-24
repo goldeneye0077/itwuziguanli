@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 class OcrInboundConfirmSkuPayload(BaseModel):
     category_id: int = Field(ge=1)
+    name: str | None = Field(default=None, max_length=128)
     brand: str = Field(min_length=1, max_length=64)
     model: str = Field(min_length=1, max_length=128)
     spec: str = Field(min_length=1, max_length=255)
@@ -18,6 +19,7 @@ class OcrInboundConfirmSkuPayload(BaseModel):
     cover_url: str | None = Field(default=None, max_length=512)
     stock_mode: SkuStockMode = Field(default=SkuStockMode.SERIALIZED)
     safety_stock_threshold: int = Field(default=0, ge=0)
+    is_visible: bool = Field(default=True)
 
 
 class OcrInboundConfirmAssetPayload(BaseModel):

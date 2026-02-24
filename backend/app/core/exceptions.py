@@ -1,4 +1,4 @@
-"""Unified exception types and FastAPI exception handler registration."""
+﻿"""Unified exception types and FastAPI exception handler registration."""
 
 from __future__ import annotations
 
@@ -32,6 +32,7 @@ ERROR_CODE_TO_STATUS: dict[str, int] = {
     "APPLICATION_NOT_FOUND": HTTPStatus.NOT_FOUND,
     "ASSET_NOT_FOUND": HTTPStatus.NOT_FOUND,
     "SKU_NOT_FOUND": HTTPStatus.NOT_FOUND,
+    "SKU_NOT_VISIBLE": HTTPStatus.CONFLICT,
     "SKU_IN_USE": HTTPStatus.CONFLICT,
     "RATE_LIMIT_EXCEEDED": HTTPStatus.TOO_MANY_REQUESTS,
     "STOCK_INSUFFICIENT": HTTPStatus.CONFLICT,
@@ -289,3 +290,5 @@ def register_exception_handlers(app: FastAPI) -> None:
             request_id=request_id,
             status_code=int(HTTPStatus.INTERNAL_SERVER_ERROR),
         )
+
+

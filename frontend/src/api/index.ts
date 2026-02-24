@@ -1,4 +1,4 @@
-import type { AppRole } from "../routes/blueprint-routes";
+﻿import type { AppRole } from "../routes/blueprint-routes";
 
 const API_PREFIX = "/api/v1";
 
@@ -76,6 +76,7 @@ interface CategoryTreeNodeResponseBody {
 interface SkuResponseBody {
   readonly id: number;
   readonly category_id: number;
+  readonly name: string;
   readonly brand: string;
   readonly model: string;
   readonly spec: string;
@@ -112,6 +113,7 @@ interface ApplicationItemResponseBody {
   readonly sku_id: number;
   readonly quantity: number;
   readonly note: string | null;
+  readonly name?: string;
   readonly brand?: string;
   readonly model?: string;
   readonly spec?: string;
@@ -172,6 +174,7 @@ interface ApprovalInboxItemResponseBody {
   readonly items_summary: Array<{
     readonly sku_id: number;
     readonly quantity: number;
+    readonly name?: string;
     readonly brand?: string;
     readonly model?: string;
     readonly spec?: string;
@@ -202,6 +205,7 @@ interface MyApplicationItemResponseBody {
   readonly items_summary: Array<{
     readonly sku_id: number;
     readonly quantity: number;
+    readonly name: string;
     readonly brand: string;
     readonly model: string;
     readonly spec: string;
@@ -340,23 +344,26 @@ interface NotificationTestResponseBody {
 interface OutboundPickupQueueItemResponseBody {
   readonly application_id: number;
   readonly applicant_user_id: number;
+  readonly applicant_name: string | null;
   readonly status: string;
-  readonly pickup_code: string;
   readonly created_at: string;
   readonly items: Array<{
     readonly sku_id: number;
     readonly quantity: number;
+    readonly sku_name: string | null;
   }>;
 }
 
 interface OutboundExpressQueueItemResponseBody {
   readonly application_id: number;
   readonly applicant_user_id: number;
+  readonly applicant_name: string | null;
   readonly status: string;
   readonly created_at: string;
   readonly items: Array<{
     readonly sku_id: number;
     readonly quantity: number;
+    readonly sku_name: string | null;
   }>;
 }
 
@@ -486,6 +493,8 @@ interface InboundOcrConfirmResponseBody {
 interface AdminSkuResponseBody {
   readonly id: number;
   readonly category_id: number;
+  readonly is_visible: boolean;
+  readonly name: string;
   readonly brand: string;
   readonly model: string;
   readonly spec: string;
@@ -514,6 +523,7 @@ interface AdminAssetsCreateResponseBody {
 interface InventorySummaryResponseBody {
   readonly sku_id: number;
   readonly category_id: number;
+  readonly name: string;
   readonly brand: string;
   readonly model: string;
   readonly spec: string;
@@ -593,6 +603,7 @@ export interface CategoryTreeNode {
 export interface SkuItem {
   readonly id: number;
   readonly categoryId: number;
+  readonly name: string;
   readonly brand: string;
   readonly model: string;
   readonly spec: string;
@@ -696,6 +707,7 @@ export interface MyApplicationSummary {
   readonly itemsSummary: Array<{
     readonly skuId: number;
     readonly quantity: number;
+    readonly name: string;
     readonly brand: string;
     readonly model: string;
     readonly spec: string;
@@ -738,6 +750,7 @@ export interface ApprovalInboxItem {
   readonly itemsSummary: Array<{
     readonly skuId: number;
     readonly quantity: number;
+    readonly name: string | null;
     readonly brand: string | null;
     readonly model: string | null;
     readonly spec: string | null;
@@ -787,6 +800,7 @@ export interface ApplicationDetailResult {
     } | null;
     readonly items: Array<
       ApplicationItemResult & {
+        readonly name: string | null;
         readonly brand: string | null;
         readonly model: string | null;
         readonly spec: string | null;
@@ -884,23 +898,26 @@ export interface NotificationTestResult {
 export interface OutboundPickupQueueItem {
   readonly applicationId: number;
   readonly applicantUserId: number;
+  readonly applicantName: string | null;
   readonly status: string;
-  readonly pickupCode: string;
   readonly createdAt: string;
   readonly items: Array<{
     readonly skuId: number;
     readonly quantity: number;
+    readonly skuName: string | null;
   }>;
 }
 
 export interface OutboundExpressQueueItem {
   readonly applicationId: number;
   readonly applicantUserId: number;
+  readonly applicantName: string | null;
   readonly status: string;
   readonly createdAt: string;
   readonly items: Array<{
     readonly skuId: number;
     readonly quantity: number;
+    readonly skuName: string | null;
   }>;
 }
 
@@ -1051,6 +1068,8 @@ export interface InboundOcrConfirmResult {
 export interface AdminSkuItem {
   readonly id: number;
   readonly categoryId: number;
+  readonly isVisible: boolean;
+  readonly name: string;
   readonly brand: string;
   readonly model: string;
   readonly spec: string;
@@ -1062,6 +1081,7 @@ export interface AdminSkuItem {
 
 export interface CreateAdminSkuInput {
   readonly categoryId: number;
+  readonly name: string;
   readonly brand: string;
   readonly model: string;
   readonly spec: string;
@@ -1069,9 +1089,12 @@ export interface CreateAdminSkuInput {
   readonly coverUrl?: string | null;
   readonly stockMode?: SkuStockMode;
   readonly safetyStockThreshold?: number;
+  readonly isVisible?: boolean;
 }
 
-export type UpdateAdminSkuInput = CreateAdminSkuInput;
+export interface UpdateAdminSkuInput extends Omit<CreateAdminSkuInput, "isVisible"> {
+  readonly isVisible: boolean;
+}
 
 interface UploadSkuImageResponseBody {
   readonly file_id: string;
@@ -1134,6 +1157,7 @@ export interface UpdateAdminAssetInput {
 export interface InventorySummaryItem {
   readonly skuId: number;
   readonly categoryId: number;
+  readonly name: string;
   readonly brand: string;
   readonly model: string;
   readonly spec: string;
@@ -1155,10 +1179,12 @@ export interface InventorySummaryItem {
 
 export class AuthApiError extends Error {
   readonly code: string;
+  readonly details: unknown;
 
-  constructor(code: string, message: string) {
+  constructor(code: string, message: string, details: unknown = null) {
     super(message);
     this.code = code;
+    this.details = details;
     this.name = "AuthApiError";
   }
 }
@@ -1202,6 +1228,7 @@ async function requestApi<TData>(
     throw new AuthApiError(
       error?.code ?? "REQUEST_FAILED",
       error?.message ?? `请求失败（状态码 ${response.status}）。`,
+      error?.details ?? null,
     );
   }
 
@@ -1610,6 +1637,7 @@ export async function fetchSkus(
     items: envelope.data.items.map((item) => ({
       id: item.id,
       categoryId: item.category_id,
+      name: item.name,
       brand: item.brand,
       model: item.model,
       spec: item.spec,
@@ -1751,6 +1779,7 @@ export async function fetchMyApplications(
       itemsSummary: item.items_summary.map((summary) => ({
         skuId: summary.sku_id,
         quantity: summary.quantity,
+        name: summary.name,
         brand: summary.brand,
         model: summary.model,
         spec: summary.spec,
@@ -1922,6 +1951,7 @@ export async function fetchApprovalInbox(
       itemsSummary: item.items_summary.map((summary) => ({
         skuId: summary.sku_id,
         quantity: summary.quantity,
+        name: summary.name ?? null,
         brand: summary.brand ?? null,
         model: summary.model ?? null,
         spec: summary.spec ?? null,
@@ -1995,6 +2025,7 @@ export async function fetchApplicationDetail(
         skuId: item.sku_id,
         quantity: item.quantity,
         note: item.note,
+        name: item.name ?? null,
         brand: item.brand ?? null,
         model: item.model ?? null,
         spec: item.spec ?? null,
@@ -2264,12 +2295,13 @@ export async function fetchOutboundPickupQueue(
     items: envelope.data.items.map((item) => ({
       applicationId: item.application_id,
       applicantUserId: item.applicant_user_id,
+      applicantName: item.applicant_name ?? null,
       status: item.status,
-      pickupCode: item.pickup_code,
       createdAt: item.created_at,
       items: item.items.map((row) => ({
         skuId: row.sku_id,
         quantity: row.quantity,
+        skuName: row.sku_name ?? null,
       })),
     })),
     meta: {
@@ -2361,11 +2393,13 @@ export async function fetchOutboundExpressQueue(
     items: envelope.data.items.map((item) => ({
       applicationId: item.application_id,
       applicantUserId: item.applicant_user_id,
+      applicantName: item.applicant_name ?? null,
       status: item.status,
       createdAt: item.created_at,
       items: item.items.map((row) => ({
         skuId: row.sku_id,
         quantity: row.quantity,
+        skuName: row.sku_name ?? null,
       })),
     })),
     meta: {
@@ -2744,6 +2778,8 @@ export async function fetchAdminSkus(
   return (envelope.data ?? []).map((item) => ({
     id: item.id,
     categoryId: item.category_id,
+    isVisible: item.is_visible,
+    name: item.name,
     brand: item.brand,
     model: item.model,
     spec: item.spec,
@@ -2798,6 +2834,8 @@ export async function createAdminSku(
     },
     body: JSON.stringify({
       category_id: input.categoryId,
+      is_visible: input.isVisible ?? true,
+      name: input.name,
       brand: input.brand,
       model: input.model,
       spec: input.spec,
@@ -2815,6 +2853,8 @@ export async function createAdminSku(
   return {
     id: envelope.data.id,
     categoryId: envelope.data.category_id,
+    isVisible: envelope.data.is_visible,
+    name: envelope.data.name,
     brand: envelope.data.brand,
     model: envelope.data.model,
     spec: envelope.data.spec,
@@ -2839,6 +2879,8 @@ export async function updateAdminSku(
     },
     body: JSON.stringify({
       category_id: input.categoryId,
+      is_visible: input.isVisible,
+      name: input.name,
       brand: input.brand,
       model: input.model,
       spec: input.spec,
@@ -2856,6 +2898,8 @@ export async function updateAdminSku(
   return {
     id: envelope.data.id,
     categoryId: envelope.data.category_id,
+    isVisible: envelope.data.is_visible,
+    name: envelope.data.name,
     brand: envelope.data.brand,
     model: envelope.data.model,
     spec: envelope.data.spec,
@@ -3032,6 +3076,7 @@ export async function fetchInventorySummary(
   return (envelope.data ?? []).map((item) => ({
     skuId: item.sku_id,
     categoryId: item.category_id,
+    name: item.name,
     brand: item.brand,
     model: item.model,
     spec: item.spec,
@@ -4284,3 +4329,5 @@ export async function queryCopilot(
     rows: envelope.data.rows,
   };
 }
+
+

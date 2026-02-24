@@ -323,6 +323,16 @@ select {
   margin-top: var(--space-md);
 }
 
+.materials-card-toolbar {
+  margin-top: var(--space-sm);
+}
+
+.materials-create-sku-trigger {
+  margin-top: 0;
+  min-width: 156px;
+  padding-inline: var(--space-lg);
+}
+
 .page-form-grid {
   display: grid;
   gap: var(--space-sm);
@@ -1480,6 +1490,10 @@ select {
 }
 
 .inbound-crud-panel__body {
+  margin-top: var(--space-sm);
+}
+
+.inbound-crud-panel__collapsed-hint {
   margin-top: var(--space-sm);
 }
 

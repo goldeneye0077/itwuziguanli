@@ -1,4 +1,4 @@
-﻿"""M05 router implementation: outbound operations."""
+"""M05 router implementation: outbound operations."""
 
 from __future__ import annotations
 
@@ -58,8 +58,15 @@ def _to_naive_utc(value: datetime) -> datetime:
 
 
 def _next_bigint_id(db: Session, model: type[object]) -> int:
-    value = db.scalar(select(func.max(getattr(model, "id"))))
-    return int(value or 0) + 1
+    # Cache per-session counters to avoid duplicate ids before transaction flush.
+    cache_key = f"next_bigint_id:{getattr(model, '__tablename__', model.__name__)}"
+    cached_value = db.info.get(cache_key)
+    if cached_value is None:
+        value = db.scalar(select(func.max(getattr(model, "id"))))
+        cached_value = int(value or 0)
+    next_value = int(cached_value) + 1
+    db.info[cache_key] = next_value
+    return next_value
 
 
 def _normalize_required_permissions(
@@ -108,9 +115,27 @@ def _assert_application_status(
     *,
     expected: ApplicationStatus,
     event: str,
-) -> None:
+) -> bool:
     if application.status == expected:
-        return
+        return True
+    if expected == ApplicationStatus.READY_OUTBOUND:
+        if application.status == ApplicationStatus.ADMIN_APPROVED:
+            return False
+        if application.status in {
+            ApplicationStatus.SUBMITTED,
+            ApplicationStatus.LOCKED,
+            ApplicationStatus.LEADER_APPROVED,
+        }:
+            raise AppException(
+                code="APPLICATION_STATUS_INVALID",
+                message="申请单尚未完成审批，暂不可执行出库。",
+                details={
+                    "application_id": application.id,
+                    "current_status": application.status.value,
+                    "expected_status": expected.value,
+                    "event": event,
+                },
+            )
     raise AppException(
         code="APPLICATION_STATUS_INVALID",
         message=f"申请单状态不支持执行 {event}。",
@@ -158,8 +183,227 @@ def _load_assigned_assets(db: Session, *, application_id: int) -> list[Asset]:
     return list(rows)
 
 
+def _auto_assign_assets(
+    db: Session,
+    *,
+    application: Application,
+    operator_user_id: int,
+) -> list[Asset]:
+    items = db.scalars(
+        select(ApplicationItem)
+        .where(ApplicationItem.application_id == application.id)
+        .order_by(ApplicationItem.id.asc())
+    ).all()
+
+    if not items:
+        raise AppException(
+            code="VALIDATION_ERROR",
+            message="申请单没有物料明细，无法自动分配资产。",
+            details={"application_id": application.id},
+        )
+
+    sku_ids = [item.sku_id for item in items]
+    sku_rows = db.scalars(select(Sku).where(Sku.id.in_(sku_ids))).all()
+    sku_by_id = {int(row.id): row for row in sku_rows}
+
+    required_by_sku: dict[int, int] = {}
+    for item in items:
+        sku = sku_by_id.get(int(item.sku_id))
+        if sku and sku.stock_mode != SkuStockMode.QUANTITY:
+            required_by_sku[int(item.sku_id)] = required_by_sku.get(int(item.sku_id), 0) + int(item.quantity)
+
+    if not required_by_sku:
+        return []
+
+    # Reuse assets already locked for this application first.
+    existing_locked_assets = db.scalars(
+        select(Asset)
+        .where(
+            Asset.sku_id.in_(required_by_sku.keys()),
+            Asset.status == AssetStatus.LOCKED,
+            Asset.locked_application_id == application.id,
+        )
+        .order_by(Asset.id.asc())
+    ).all()
+    existing_locked_by_sku: dict[int, list[Asset]] = {}
+    for asset in existing_locked_assets:
+        existing_locked_by_sku.setdefault(int(asset.sku_id), []).append(asset)
+
+    selected_assets: list[Asset] = []
+    extra_locked_assets: list[Asset] = []
+    shortfall_by_sku: dict[int, int] = {}
+
+    for sku_id, required_qty in required_by_sku.items():
+        locked_for_sku = existing_locked_by_sku.get(sku_id, [])
+        selected_assets.extend(locked_for_sku[:required_qty])
+        if len(locked_for_sku) > required_qty:
+            extra_locked_assets.extend(locked_for_sku[required_qty:])
+        missing_qty = required_qty - min(len(locked_for_sku), required_qty)
+        if missing_qty > 0:
+            shortfall_by_sku[sku_id] = missing_qty
+
+    available_by_sku: dict[int, list[Asset]] = {}
+    if shortfall_by_sku:
+        available_assets = db.scalars(
+            select(Asset)
+            .where(
+                Asset.sku_id.in_(shortfall_by_sku.keys()),
+                Asset.status == AssetStatus.IN_STOCK,
+                Asset.locked_application_id.is_(None),
+            )
+            .order_by(Asset.id.asc())
+        ).all()
+        for asset in available_assets:
+            available_by_sku.setdefault(int(asset.sku_id), []).append(asset)
+
+    insufficient_assets: list[dict[str, Any]] = []
+    for sku_id, missing_qty in shortfall_by_sku.items():
+        available = available_by_sku.get(sku_id, [])
+        if len(available) < missing_qty:
+            sku = sku_by_id.get(sku_id)
+            insufficient_assets.append(
+                {
+                    "sku_id": sku_id,
+                    "sku_name": f"{sku.brand} {sku.model}" if sku else "Unknown",
+                    "required": required_by_sku[sku_id],
+                    "available": len(existing_locked_by_sku.get(sku_id, [])) + len(available),
+                }
+            )
+
+    if insufficient_assets:
+        raise AppException(
+            code="INSUFFICIENT_ASSETS",
+            message="库存中可用资产不足，无法完成自动分配。",
+            details={"insufficient_items": insufficient_assets},
+        )
+
+    assets_to_lock: list[Asset] = []
+    for sku_id, missing_qty in shortfall_by_sku.items():
+        assets_to_lock.extend(available_by_sku.get(sku_id, [])[:missing_qty])
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    next_stock_flow_id = _next_bigint_id(db, StockFlow)
+    next_relation_id = _next_bigint_id(db, ApplicationAsset)
+
+    for asset in assets_to_lock:
+        asset.status = AssetStatus.LOCKED
+        asset.locked_application_id = application.id
+        db.add(
+            StockFlow(
+                id=next_stock_flow_id,
+                asset_id=asset.id,
+                action=StockFlowAction.LOCK,
+                operator_user_id=operator_user_id,
+                related_application_id=application.id,
+                occurred_at=now,
+                meta_json={"event": "auto_assign_outbound"},
+            )
+        )
+        next_stock_flow_id += 1
+    selected_assets.extend(assets_to_lock)
+
+    # If this application has more locked assets than required, release the extras.
+    for asset in extra_locked_assets:
+        asset.status = AssetStatus.IN_STOCK
+        asset.locked_application_id = None
+        db.add(
+            StockFlow(
+                id=next_stock_flow_id,
+                asset_id=asset.id,
+                action=StockFlowAction.UNLOCK,
+                operator_user_id=operator_user_id,
+                related_application_id=application.id,
+                occurred_at=now,
+                meta_json={"event": "auto_assign_outbound_rebalance"},
+            )
+        )
+        next_stock_flow_id += 1
+
+    # Rebuild relations to keep a single, exact mapping between application and selected assets.
+    db.query(ApplicationAsset).filter(ApplicationAsset.application_id == application.id).delete()
+    for asset_id in sorted({int(asset.id) for asset in selected_assets}):
+        db.add(
+            ApplicationAsset(
+                id=next_relation_id,
+                application_id=application.id,
+                asset_id=asset_id,
+            )
+        )
+        next_relation_id += 1
+
+    application.status = ApplicationStatus.READY_OUTBOUND
+
+    db.flush()
+
+    return sorted(selected_assets, key=lambda row: int(row.id))
+
+
 def _serialize_items(items: list[ApplicationItem]) -> list[dict[str, int]]:
     return [{"sku_id": item.sku_id, "quantity": item.quantity} for item in items]
+
+
+def _resolve_sku_display_name(sku: Sku | None, *, fallback_sku_id: int) -> str:
+    if sku is None:
+        return f"物料#{fallback_sku_id}"
+    explicit_name = (sku.name or "").strip()
+    if explicit_name:
+        return explicit_name
+    fallback = f"{sku.brand} {sku.model}".strip()
+    if fallback:
+        return fallback
+    return f"物料#{fallback_sku_id}"
+
+
+def _build_applicant_name_map(
+    db: Session, *, applications: list[Application]
+) -> dict[int, str]:
+    user_ids = sorted(
+        {
+            int(application.applicant_user_id)
+            for application in applications
+            if application.applicant_user_id is not None
+        }
+    )
+    if not user_ids:
+        return {}
+    rows = db.execute(
+        select(SysUser.id, SysUser.name).where(SysUser.id.in_(user_ids))
+    ).all()
+    return {int(user_id): str(name) for user_id, name in rows if name is not None}
+
+
+def _build_sku_name_map(
+    db: Session, *, items_by_application: dict[int, list[ApplicationItem]]
+) -> dict[int, str]:
+    sku_ids = sorted(
+        {
+            int(item.sku_id)
+            for items in items_by_application.values()
+            for item in items
+            if item.sku_id is not None
+        }
+    )
+    if not sku_ids:
+        return {}
+    skus = db.scalars(select(Sku).where(Sku.id.in_(sku_ids))).all()
+    sku_by_id = {int(sku.id): sku for sku in skus}
+    return {
+        sku_id: _resolve_sku_display_name(sku_by_id.get(sku_id), fallback_sku_id=sku_id)
+        for sku_id in sku_ids
+    }
+
+
+def _serialize_queue_items(
+    items: list[ApplicationItem], *, sku_name_by_id: dict[int, str]
+) -> list[dict[str, object]]:
+    return [
+        {
+            "sku_id": int(item.sku_id),
+            "quantity": int(item.quantity),
+            "sku_name": sku_name_by_id.get(int(item.sku_id)),
+        }
+        for item in items
+    ]
 
 
 def _serialize_assets(assets: list[Asset]) -> list[dict[str, object]]:
@@ -281,6 +525,46 @@ def _apply_outbound_asset_transition(
         next_stock_flow_id += 1
 
 
+def _release_remaining_locked_assets(
+    db: Session,
+    *,
+    application: Application,
+    operator_user_id: int,
+    event: str,
+) -> list[Asset]:
+    # Session uses autoflush=False; flush first so we don't unlock just-delivered assets.
+    db.flush()
+    locked_assets = db.scalars(
+        select(Asset)
+        .where(
+            Asset.locked_application_id == application.id,
+            Asset.status == AssetStatus.LOCKED,
+        )
+        .order_by(Asset.id.asc())
+    ).all()
+    if not locked_assets:
+        return []
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    next_stock_flow_id = _next_bigint_id(db, StockFlow)
+    for asset in locked_assets:
+        asset.status = AssetStatus.IN_STOCK
+        asset.locked_application_id = None
+        db.add(
+            StockFlow(
+                id=next_stock_flow_id,
+                asset_id=asset.id,
+                action=StockFlowAction.UNLOCK,
+                operator_user_id=operator_user_id,
+                related_application_id=application.id,
+                occurred_at=now,
+                meta_json={"event": event},
+            )
+        )
+        next_stock_flow_id += 1
+    return list(locked_assets)
+
+
 def _resolve_receiver_snapshot(
     db: Session,
     *,
@@ -341,6 +625,10 @@ def list_pickup_queue(
     applications = db.scalars(base_stmt.offset(offset).limit(page_size)).all()
     application_ids = [application.id for application in applications]
     items_by_application = _load_application_items(db, application_ids=application_ids)
+    applicant_name_by_user_id = _build_applicant_name_map(db, applications=applications)
+    sku_name_by_id = _build_sku_name_map(
+        db, items_by_application=items_by_application
+    )
 
     return build_success_response(
         {
@@ -348,11 +636,15 @@ def list_pickup_queue(
                 {
                     "application_id": application.id,
                     "applicant_user_id": application.applicant_user_id,
+                    "applicant_name": (
+                        application.applicant_name_snapshot
+                        or applicant_name_by_user_id.get(int(application.applicant_user_id))
+                    ),
                     "status": application.status.value,
-                    "pickup_code": application.pickup_code,
                     "created_at": _to_iso8601(application.created_at),
-                    "items": _serialize_items(
-                        items_by_application.get(application.id, [])
+                    "items": _serialize_queue_items(
+                        items_by_application.get(application.id, []),
+                        sku_name_by_id=sku_name_by_id,
                     ),
                 }
                 for application in applications
@@ -385,7 +677,8 @@ def confirm_pickup_outbound(
             message="申请单交付方式不是自提。",
             details={"application_id": application.id},
         )
-    _assert_application_status(
+
+    needs_auto_assign = not _assert_application_status(
         application,
         expected=ApplicationStatus.READY_OUTBOUND,
         event="confirm_pickup",
@@ -400,7 +693,23 @@ def confirm_pickup_outbound(
     mode_by_sku_id = {int(row.id): row.stock_mode for row in sku_rows}
 
     delivered_assets: list[Asset] = []
-    if any(mode_by_sku_id.get(int(item.sku_id)) != SkuStockMode.QUANTITY for item in items):
+    if needs_auto_assign:
+        assigned_assets = _auto_assign_assets(
+            db,
+            application=application,
+            operator_user_id=context.user.id,
+        )
+        if assigned_assets:
+            _apply_outbound_asset_transition(
+                db,
+                application=application,
+                assets=assigned_assets,
+                operator_user_id=context.user.id,
+                action=StockFlowAction.OUTBOUND,
+                event="confirm_pickup",
+            )
+            delivered_assets = assigned_assets
+    elif any(mode_by_sku_id.get(int(item.sku_id)) != SkuStockMode.QUANTITY for item in items):
         assigned_assets = _load_assigned_assets(db, application_id=application.id)
         _apply_outbound_asset_transition(
             db,
@@ -427,6 +736,13 @@ def confirm_pickup_outbound(
             occurred_at=now,
             meta_json={"event": "confirm_pickup"},
         )
+
+    _release_remaining_locked_assets(
+        db,
+        application=application,
+        operator_user_id=context.user.id,
+        event="confirm_pickup_cleanup",
+    )
     application.status = ApplicationStatus.OUTBOUNDED
 
     db.commit()
@@ -466,6 +782,10 @@ def list_express_queue(
     applications = db.scalars(base_stmt.offset(offset).limit(page_size)).all()
     application_ids = [application.id for application in applications]
     items_by_application = _load_application_items(db, application_ids=application_ids)
+    applicant_name_by_user_id = _build_applicant_name_map(db, applications=applications)
+    sku_name_by_id = _build_sku_name_map(
+        db, items_by_application=items_by_application
+    )
 
     return build_success_response(
         {
@@ -473,10 +793,15 @@ def list_express_queue(
                 {
                     "application_id": application.id,
                     "applicant_user_id": application.applicant_user_id,
+                    "applicant_name": (
+                        application.applicant_name_snapshot
+                        or applicant_name_by_user_id.get(int(application.applicant_user_id))
+                    ),
                     "status": application.status.value,
                     "created_at": _to_iso8601(application.created_at),
-                    "items": _serialize_items(
-                        items_by_application.get(application.id, [])
+                    "items": _serialize_queue_items(
+                        items_by_application.get(application.id, []),
+                        sku_name_by_id=sku_name_by_id,
                     ),
                 }
                 for application in applications
@@ -510,7 +835,8 @@ def ship_express_outbound(
             message="申请单交付方式不是快递。",
             details={"application_id": application.id},
         )
-    _assert_application_status(
+
+    needs_auto_assign = not _assert_application_status(
         application,
         expected=ApplicationStatus.READY_OUTBOUND,
         event="ship_express",
@@ -525,7 +851,24 @@ def ship_express_outbound(
     mode_by_sku_id = {int(row.id): row.stock_mode for row in sku_rows}
 
     delivered_assets: list[Asset] = []
-    if any(mode_by_sku_id.get(int(item.sku_id)) != SkuStockMode.QUANTITY for item in items):
+    if needs_auto_assign:
+        assigned_assets = _auto_assign_assets(
+            db,
+            application=application,
+            operator_user_id=context.user.id,
+        )
+        if assigned_assets:
+            _apply_outbound_asset_transition(
+                db,
+                application=application,
+                assets=assigned_assets,
+                operator_user_id=context.user.id,
+                action=StockFlowAction.SHIP,
+                event="ship_express",
+                meta={"carrier": payload.carrier, "tracking_no": payload.tracking_no},
+            )
+            delivered_assets = assigned_assets
+    elif any(mode_by_sku_id.get(int(item.sku_id)) != SkuStockMode.QUANTITY for item in items):
         assigned_assets = _load_assigned_assets(db, application_id=application.id)
         _apply_outbound_asset_transition(
             db,
@@ -557,6 +900,13 @@ def ship_express_outbound(
             occurred_at=now,
             meta_json={"event": "ship_express", "carrier": payload.carrier, "tracking_no": payload.tracking_no},
         )
+
+    _release_remaining_locked_assets(
+        db,
+        application=application,
+        operator_user_id=context.user.id,
+        event="ship_express_cleanup",
+    )
 
     logistics = db.scalar(
         select(Logistics).where(Logistics.application_id == application.id).limit(1)
@@ -1193,4 +1543,3 @@ def export_outbound_records_csv(
     )
     response.headers["Content-Disposition"] = 'attachment; filename="outbound_records.csv"'
     return response
-

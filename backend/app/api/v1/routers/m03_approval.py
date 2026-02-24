@@ -231,6 +231,7 @@ def get_approval_inbox(
                 {
                     "sku_id": int(item.sku_id),
                     "quantity": int(item.quantity),
+                    "name": sku.name,
                     "brand": sku.brand,
                     "model": sku.model,
                     "spec": sku.spec,
@@ -238,7 +239,7 @@ def get_approval_inbox(
                 }
             )
             title_labels_by_application.setdefault(int(item.application_id), []).append(
-                sku.model or sku.brand
+                sku.name or sku.model or sku.brand
             )
 
     data = []
@@ -357,7 +358,7 @@ def get_application_detail(
         .all()
     )
 
-    title_labels = [sku.model or sku.brand for _, sku in item_rows]
+    title_labels = [sku.name or sku.model or sku.brand for _, sku in item_rows]
     resolved_title = application.title or _build_application_title(title_labels)
 
     return build_success_response(
@@ -391,6 +392,7 @@ def get_application_detail(
                         "quantity": item.quantity,
                         "note": item.note,
                         "category_id": sku.category_id,
+                        "name": sku.name,
                         "brand": sku.brand,
                         "model": sku.model,
                         "spec": sku.spec,
@@ -765,7 +767,7 @@ def assign_application_assets(
                     "asset_tag": asset.asset_tag,
                     "sn": asset.sn,
                     "sku_id": asset.sku_id,
-                    "sku_label": f"{sku.brand} {sku.model}",
+                    "sku_label": (sku.name or f"{sku.brand} {sku.model}").strip(),
                 }
                 for asset, sku in assigned_assets
             ],

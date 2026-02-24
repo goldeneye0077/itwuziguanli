@@ -12,6 +12,20 @@ import { useAuthSession } from "../stores";
 import { useM02Cart } from "./m02-cart";
 import { toApplicationStatusLabel, toDateLabel, toDeliveryTypeLabel } from "./page-helpers";
 
+function toMaterialName(
+  name: string | null | undefined,
+  brand: string,
+  model: string,
+  skuId: number,
+): string {
+  const explicit = (name ?? "").trim();
+  if (explicit) {
+    return explicit;
+  }
+  const value = `${brand} ${model}`.trim();
+  return value.length > 0 ? value : `SKU-${skuId}`;
+}
+
 export function ApplicationsPage(): JSX.Element {
   const navigate = useNavigate();
   const { state } = useAuthSession();
@@ -53,6 +67,11 @@ export function ApplicationsPage(): JSX.Element {
       return;
     }
 
+    if (!currentUserId) {
+      setErrorMessage("当前用户信息未初始化，请稍后重试。");
+      return;
+    }
+
     setIsRollingBackAppId(applicationId);
     setErrorMessage(null);
     try {
@@ -60,6 +79,12 @@ export function ApplicationsPage(): JSX.Element {
       const entries = detail.application.items.map((item) => {
         const normalizedBrand = item.brand?.trim() ? item.brand : "未知品牌";
         const normalizedModel = item.model?.trim() ? item.model : `SKU-${item.skuId}`;
+        const normalizedName = toMaterialName(
+          item.name,
+          normalizedBrand,
+          normalizedModel,
+          item.skuId,
+        );
         const normalizedSpec = item.spec?.trim() ? item.spec : "-";
         const normalizedQuantity = Math.max(1, Math.floor(item.quantity));
         const normalizedAvailable = Math.max(
@@ -70,6 +95,7 @@ export function ApplicationsPage(): JSX.Element {
         const sku: SkuItem = {
           id: item.skuId,
           categoryId: item.categoryId,
+          name: normalizedName,
           brand: normalizedBrand,
           model: normalizedModel,
           spec: normalizedSpec,
@@ -139,7 +165,12 @@ export function ApplicationsPage(): JSX.Element {
                 </p>
                 <p className="dashboard-list__content">
                   取件码：{item.pickupCode} - 物料：
-                  {item.itemsSummary.map((entry) => `${entry.brand} ${entry.model} x${entry.quantity}`).join("、")}
+                  {item.itemsSummary
+                    .map(
+                      (entry) =>
+                        `物料名称：${toMaterialName(entry.name, entry.brand, entry.model, entry.skuId)}（型号：${entry.model}，品牌：${entry.brand}）x${entry.quantity}`,
+                    )
+                    .join("；")}
                 </p>
                 <div className="page-actions">
                   <Link className="dashboard-link" to={`/applications/${item.id}`}>
@@ -166,3 +197,4 @@ export function ApplicationsPage(): JSX.Element {
     </div>
   );
 }
+

@@ -61,6 +61,15 @@ function toCategoryOptionLabel(option: FlatCategoryOption): string {
   return `${indent}${option.name} (#${option.id})`;
 }
 
+function toMaterialName(name: string | null | undefined, brand: string, model: string): string {
+  const explicit = (name ?? "").trim();
+  if (explicit) {
+    return explicit;
+  }
+  const fallback = `${brand} ${model}`.trim();
+  return fallback.length > 0 ? fallback : "-";
+}
+
 function toStockModeLabel(mode: SkuStockMode): string {
   if (mode === "QUANTITY") {
     return "数量库存（无需 SN）";
@@ -123,6 +132,7 @@ export function MaterialsPage(): JSX.Element {
 
   const [newSkuCategoryId, setNewSkuCategoryId] = useState<string>("");
   const [newSkuStockMode, setNewSkuStockMode] = useState<SkuStockMode>("SERIALIZED");
+  const [newSkuName, setNewSkuName] = useState("");
   const [newSkuBrand, setNewSkuBrand] = useState("");
   const [newSkuModel, setNewSkuModel] = useState("");
   const [newSkuSpec, setNewSkuSpec] = useState("");
@@ -131,19 +141,23 @@ export function MaterialsPage(): JSX.Element {
   const [newSkuCoverUrl, setNewSkuCoverUrl] = useState<string | null>(null);
   const [isUploadingNewSkuCover, setIsUploadingNewSkuCover] = useState(false);
   const [isCreatingSku, setIsCreatingSku] = useState(false);
+  const [isCreateSkuPanelOpen, setIsCreateSkuPanelOpen] = useState(false);
 
   const [editingSkuId, setEditingSkuId] = useState<number | null>(null);
   const [editSkuCategoryId, setEditSkuCategoryId] = useState<string>("");
   const [editSkuStockMode, setEditSkuStockMode] = useState<SkuStockMode>("SERIALIZED");
+  const [editSkuName, setEditSkuName] = useState("");
   const [editSkuBrand, setEditSkuBrand] = useState("");
   const [editSkuModel, setEditSkuModel] = useState("");
   const [editSkuSpec, setEditSkuSpec] = useState("");
   const [editSkuReferencePrice, setEditSkuReferencePrice] = useState("");
   const [editSkuSafetyStockThreshold, setEditSkuSafetyStockThreshold] = useState("0");
   const [editSkuCoverUrl, setEditSkuCoverUrl] = useState<string | null>(null);
+  const [editSkuIsVisible, setEditSkuIsVisible] = useState(true);
   const [isUploadingEditSkuCover, setIsUploadingEditSkuCover] = useState(false);
   const [isUpdatingSku, setIsUpdatingSku] = useState(false);
   const [deletingSkuId, setDeletingSkuId] = useState<number | null>(null);
+  const [togglingSkuVisibilityId, setTogglingSkuVisibilityId] = useState<number | null>(null);
 
   if (!accessToken) {
     return (
@@ -428,12 +442,13 @@ export function MaterialsPage(): JSX.Element {
     }
 
     if (
+      !newSkuName.trim() ||
       !newSkuBrand.trim() ||
       !newSkuModel.trim() ||
       !newSkuSpec.trim() ||
       !newSkuReferencePrice.trim()
     ) {
-      setErrorMessage("品牌/型号/规格/参考价格不能为空。");
+      setErrorMessage("物料名称/品牌/型号/规格/参考价格不能为空。");
       return;
     }
 
@@ -443,6 +458,7 @@ export function MaterialsPage(): JSX.Element {
     try {
       const created = await createAdminSku(token, {
         categoryId: parsedCategoryId,
+        name: newSkuName.trim(),
         brand: newSkuBrand.trim(),
         model: newSkuModel.trim(),
         spec: newSkuSpec.trim(),
@@ -451,7 +467,8 @@ export function MaterialsPage(): JSX.Element {
         stockMode: newSkuStockMode,
         safetyStockThreshold: Math.trunc(parsedThreshold),
       });
-      setSuccessMessage(`物料创建成功：#${created.id} ${created.brand} ${created.model}。`);
+      setSuccessMessage(`物料创建成功：#${created.id} ${created.name}。`);
+      setNewSkuName("");
       setNewSkuBrand("");
       setNewSkuModel("");
       setNewSkuSpec("");
@@ -470,24 +487,28 @@ export function MaterialsPage(): JSX.Element {
     setEditingSkuId(item.id);
     setEditSkuCategoryId(String(item.categoryId));
     setEditSkuStockMode(item.stockMode);
+    setEditSkuName(item.name);
     setEditSkuBrand(item.brand);
     setEditSkuModel(item.model);
     setEditSkuSpec(item.spec);
     setEditSkuReferencePrice(item.referencePrice);
     setEditSkuSafetyStockThreshold(String(item.safetyStockThreshold));
     setEditSkuCoverUrl(item.coverUrl);
+    setEditSkuIsVisible(item.isVisible);
   }
 
   function handleCancelEditSku(): void {
     setEditingSkuId(null);
     setEditSkuCategoryId("");
     setEditSkuStockMode("SERIALIZED");
+    setEditSkuName("");
     setEditSkuBrand("");
     setEditSkuModel("");
     setEditSkuSpec("");
     setEditSkuReferencePrice("");
     setEditSkuSafetyStockThreshold("0");
     setEditSkuCoverUrl(null);
+    setEditSkuIsVisible(true);
   }
 
   async function handleUploadEditSkuCover(file: File): Promise<void> {
@@ -530,12 +551,13 @@ export function MaterialsPage(): JSX.Element {
     }
 
     if (
+      !editSkuName.trim() ||
       !editSkuBrand.trim() ||
       !editSkuModel.trim() ||
       !editSkuSpec.trim() ||
       !editSkuReferencePrice.trim()
     ) {
-      setErrorMessage("品牌/型号/规格/参考价格不能为空。");
+      setErrorMessage("物料名称/品牌/型号/规格/参考价格不能为空。");
       return;
     }
 
@@ -545,6 +567,8 @@ export function MaterialsPage(): JSX.Element {
     try {
       const updated = await updateAdminSku(token, editingSkuId, {
         categoryId: parsedCategoryId,
+        name: editSkuName.trim(),
+        isVisible: editSkuIsVisible,
         brand: editSkuBrand.trim(),
         model: editSkuModel.trim(),
         spec: editSkuSpec.trim(),
@@ -583,6 +607,41 @@ export function MaterialsPage(): JSX.Element {
       setErrorMessage(toErrorMessage(error, "删除物料失败。"));
     } finally {
       setDeletingSkuId(null);
+    }
+  }
+
+  async function handleToggleSkuVisibility(item: AdminSkuItem): Promise<void> {
+    if (!canManageSkus) {
+      setErrorMessage("当前账号缺少 INVENTORY:WRITE 权限，无法切换商城可见性。");
+      return;
+    }
+
+    const nextVisible = !item.isVisible;
+    setTogglingSkuVisibilityId(item.id);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    try {
+      await updateAdminSku(token, item.id, {
+        categoryId: item.categoryId,
+        name: item.name,
+        isVisible: nextVisible,
+        brand: item.brand,
+        model: item.model,
+        spec: item.spec,
+        referencePrice: item.referencePrice,
+        coverUrl: item.coverUrl,
+        stockMode: item.stockMode,
+        safetyStockThreshold: item.safetyStockThreshold,
+      });
+      if (editingSkuId === item.id) {
+        setEditSkuIsVisible(nextVisible);
+      }
+      setSuccessMessage(`物料 #${item.id} 已设为商城${nextVisible ? "可见" : "隐藏"}。`);
+      await loadSkus();
+    } catch (error) {
+      setErrorMessage(toErrorMessage(error, "切换物料商城可见性失败。"));
+    } finally {
+      setTogglingSkuVisibilityId(null);
     }
   }
 
@@ -880,8 +939,150 @@ export function MaterialsPage(): JSX.Element {
               `stock_mode` 决定库存方式：{toStockModeLabel("SERIALIZED")} /{" "}
               {toStockModeLabel("QUANTITY")}。
             </p>
+            <div className="page-toolbar materials-card-toolbar">
+              <button
+                className="auth-submit materials-create-sku-trigger"
+                type="button"
+                disabled={!canManageSkus}
+                onClick={() => {
+                  setIsCreateSkuPanelOpen((open) => !open);
+                }}
+              >
+                {isCreateSkuPanelOpen ? "收起新增物料" : "新增物料"}
+              </button>
+            </div>
           </div>
           <div className="outbound-action-grid page-form-grid">
+            <section className="inbound-crud-panel" aria-label="新增物料">
+              <div className="inbound-crud-panel__head">
+                <p className="app-shell__section-label">新增物料</p>
+                <button
+                  className="app-shell__header-action"
+                  type="button"
+                  disabled={!canManageSkus}
+                  onClick={() => {
+                    setIsCreateSkuPanelOpen((open) => !open);
+                  }}
+                >
+                  {isCreateSkuPanelOpen ? "收起" : "展开"}
+                </button>
+              </div>
+
+              {isCreateSkuPanelOpen ? (
+                <div className="outbound-action-grid page-form-grid inbound-crud-panel__body">
+                  <div className="inbound-inline-fields">
+                    <label className="store-field">
+                      分类
+                      <select
+                        value={newSkuCategoryId}
+                        onChange={(event) => setNewSkuCategoryId(event.target.value)}
+                        disabled={!categoryOptions.length || !canManageSkus}
+                      >
+                        {categoryOptions.length ? (
+                          categoryOptions.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {toCategoryOptionLabel(option)}
+                            </option>
+                          ))
+                        ) : (
+                          <option value="">（请先创建分类）</option>
+                        )}
+                      </select>
+                    </label>
+                    <label className="store-field">
+                      库存模式
+                      <select
+                        value={newSkuStockMode}
+                        onChange={(event) =>
+                          setNewSkuStockMode(event.target.value === "QUANTITY" ? "QUANTITY" : "SERIALIZED")
+                        }
+                      >
+                        <option value="SERIALIZED">SERIALIZED</option>
+                        <option value="QUANTITY">QUANTITY</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <label className="store-field">
+                    安全库存阈值
+                    <input
+                      value={newSkuSafetyStockThreshold}
+                      onChange={(event) => setNewSkuSafetyStockThreshold(event.target.value)}
+                    />
+                  </label>
+
+                  <label className="store-field">
+                    品牌
+                    <input value={newSkuBrand} onChange={(event) => setNewSkuBrand(event.target.value)} />
+                  </label>
+                  <label className="store-field">
+                    型号
+                    <input value={newSkuModel} onChange={(event) => setNewSkuModel(event.target.value)} />
+                  </label>
+                  <label className="store-field">
+                    物料名称
+                    <input value={newSkuName} onChange={(event) => setNewSkuName(event.target.value)} />
+                  </label>
+                  <label className="store-field">
+                    规格
+                    <input value={newSkuSpec} onChange={(event) => setNewSkuSpec(event.target.value)} />
+                  </label>
+                  <label className="store-field">
+                    参考价格
+                    <input
+                      value={newSkuReferencePrice}
+                      onChange={(event) => setNewSkuReferencePrice(event.target.value)}
+                    />
+                  </label>
+
+                  <div className="inbound-cover inbound-field-wide" aria-label="新建 SKU 封面上传">
+                    <p className="inbound-cover__label">SKU 封面（可选）</p>
+                    <div className="inbound-cover__row">
+                      <input
+                        className="inbound-file-input"
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        disabled={isUploadingNewSkuCover || !canManageSkus}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0] ?? null;
+                          if (file) {
+                            void handleUploadNewSkuCover(file);
+                          }
+                          event.currentTarget.value = "";
+                        }}
+                      />
+                      <span className="inbound-import-meta">
+                        {isUploadingNewSkuCover ? "上传中..." : newSkuCoverUrl ? "已上传" : "未上传"}
+                      </span>
+                    </div>
+                    {newSkuCoverUrl ? (
+                      <>
+                        <p className="inbound-cover__url">{newSkuCoverUrl}</p>
+                        <div className="inbound-cover__preview">
+                          <img src={newSkuCoverUrl} alt="SKU 封面预览" loading="lazy" />
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+
+                  <button
+                    className="auth-submit"
+                    type="button"
+                    disabled={isCreatingSku || !categoryOptions.length || !canManageSkus}
+                    onClick={() => {
+                      void handleCreateSku();
+                    }}
+                  >
+                    {isCreatingSku ? "提交中..." : "创建物料"}
+                  </button>
+                </div>
+              ) : (
+                <p className="app-shell__card-copy inbound-crud-panel__collapsed-hint">
+                  点击上方“新增物料”按钮展开表单。
+                </p>
+              )}
+            </section>
+
             <div className="inbound-inline-fields">
               <label className="store-field">
                 SKU 编号（可选）
@@ -952,6 +1153,8 @@ export function MaterialsPage(): JSX.Element {
                       <th>库存模式</th>
                       <th>品牌</th>
                       <th>型号</th>
+                      <th>物料名称</th>
+                      <th>商城可见</th>
                       <th>规格</th>
                       <th>参考价</th>
                       <th>安全阈值</th>
@@ -978,6 +1181,8 @@ export function MaterialsPage(): JSX.Element {
                         <td>{item.stockMode}</td>
                         <td>{item.brand}</td>
                         <td>{item.model}</td>
+                        <td>{toMaterialName(item.name, item.brand, item.model)}</td>
+                        <td>{item.isVisible ? "可见" : "隐藏"}</td>
                         <td>{item.spec}</td>
                         <td>{item.referencePrice}</td>
                         <td>{item.safetyStockThreshold}</td>
@@ -992,6 +1197,20 @@ export function MaterialsPage(): JSX.Element {
                               }}
                             >
                               编辑
+                            </button>
+                            <button
+                              className="app-shell__header-action"
+                              type="button"
+                              disabled={togglingSkuVisibilityId === item.id || !canManageSkus}
+                              onClick={() => {
+                                void handleToggleSkuVisibility(item);
+                              }}
+                            >
+                              {togglingSkuVisibilityId === item.id
+                                ? "切换中..."
+                                : item.isVisible
+                                  ? "设为隐藏"
+                                  : "设为可见"}
                             </button>
                             <button
                               className="app-shell__header-action inbound-action-danger"
@@ -1015,113 +1234,6 @@ export function MaterialsPage(): JSX.Element {
                 {isLoadingSkus ? "物料加载中..." : "暂无物料数据，可调整筛选条件并点击“查询物料”。"}
               </p>
             )}
-
-            <details className="inbound-crud-panel">
-              <summary>新增物料</summary>
-              <div className="outbound-action-grid page-form-grid inbound-crud-panel__body">
-                <div className="inbound-inline-fields">
-                  <label className="store-field">
-                    分类
-                    <select
-                      value={newSkuCategoryId}
-                      onChange={(event) => setNewSkuCategoryId(event.target.value)}
-                      disabled={!categoryOptions.length || !canManageSkus}
-                    >
-                      {categoryOptions.length ? (
-                        categoryOptions.map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {toCategoryOptionLabel(option)}
-                          </option>
-                        ))
-                      ) : (
-                        <option value="">（请先创建分类）</option>
-                      )}
-                    </select>
-                  </label>
-                  <label className="store-field">
-                    库存模式
-                    <select
-                      value={newSkuStockMode}
-                      onChange={(event) =>
-                        setNewSkuStockMode(event.target.value === "QUANTITY" ? "QUANTITY" : "SERIALIZED")
-                      }
-                    >
-                      <option value="SERIALIZED">SERIALIZED</option>
-                      <option value="QUANTITY">QUANTITY</option>
-                    </select>
-                  </label>
-                </div>
-
-                <label className="store-field">
-                  安全库存阈值
-                  <input
-                    value={newSkuSafetyStockThreshold}
-                    onChange={(event) => setNewSkuSafetyStockThreshold(event.target.value)}
-                  />
-                </label>
-
-                <label className="store-field">
-                  品牌
-                  <input value={newSkuBrand} onChange={(event) => setNewSkuBrand(event.target.value)} />
-                </label>
-                <label className="store-field">
-                  型号
-                  <input value={newSkuModel} onChange={(event) => setNewSkuModel(event.target.value)} />
-                </label>
-                <label className="store-field">
-                  规格
-                  <input value={newSkuSpec} onChange={(event) => setNewSkuSpec(event.target.value)} />
-                </label>
-                <label className="store-field">
-                  参考价格
-                  <input
-                    value={newSkuReferencePrice}
-                    onChange={(event) => setNewSkuReferencePrice(event.target.value)}
-                  />
-                </label>
-
-                <div className="inbound-cover inbound-field-wide" aria-label="新建 SKU 封面上传">
-                  <p className="inbound-cover__label">SKU 封面（可选）</p>
-                  <div className="inbound-cover__row">
-                    <input
-                      className="inbound-file-input"
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp"
-                      disabled={isUploadingNewSkuCover || !canManageSkus}
-                      onChange={(event) => {
-                        const file = event.target.files?.[0] ?? null;
-                        if (file) {
-                          void handleUploadNewSkuCover(file);
-                        }
-                        event.currentTarget.value = "";
-                      }}
-                    />
-                    <span className="inbound-import-meta">
-                      {isUploadingNewSkuCover ? "上传中..." : newSkuCoverUrl ? "已上传" : "未上传"}
-                    </span>
-                  </div>
-                  {newSkuCoverUrl ? (
-                    <>
-                      <p className="inbound-cover__url">{newSkuCoverUrl}</p>
-                      <div className="inbound-cover__preview">
-                        <img src={newSkuCoverUrl} alt="SKU 封面预览" loading="lazy" />
-                      </div>
-                    </>
-                  ) : null}
-                </div>
-
-                <button
-                  className="auth-submit"
-                  type="button"
-                  disabled={isCreatingSku || !categoryOptions.length || !canManageSkus}
-                  onClick={() => {
-                    void handleCreateSku();
-                  }}
-                >
-                  {isCreatingSku ? "提交中..." : "创建物料"}
-                </button>
-              </div>
-            </details>
 
             {editingSkuId ? (
               <section className="inbound-crud-panel inbound-crud-panel--editor" aria-label="编辑物料">
@@ -1175,6 +1287,10 @@ export function MaterialsPage(): JSX.Element {
                   <label className="store-field">
                     型号
                     <input value={editSkuModel} onChange={(event) => setEditSkuModel(event.target.value)} />
+                  </label>
+                  <label className="store-field">
+                    物料名称
+                    <input value={editSkuName} onChange={(event) => setEditSkuName(event.target.value)} />
                   </label>
                   <label className="store-field">
                     规格

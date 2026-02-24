@@ -26,6 +26,7 @@ function isSkuItem(value: unknown): value is SkuItem {
   const candidate = value as {
     id?: unknown;
     categoryId?: unknown;
+    name?: unknown;
     brand?: unknown;
     model?: unknown;
     spec?: unknown;
@@ -38,6 +39,7 @@ function isSkuItem(value: unknown): value is SkuItem {
   return (
     typeof candidate.id === "number" &&
     typeof candidate.categoryId === "number" &&
+    (candidate.name === undefined || typeof candidate.name === "string") &&
     typeof candidate.brand === "string" &&
     typeof candidate.model === "string" &&
     typeof candidate.spec === "string" &&
@@ -80,6 +82,34 @@ function normalizeCart(candidate: unknown): CartState {
   }
 
   return cart;
+}
+
+function buildCartStateFromEntries(items: ReadonlyArray<CartEntry>): CartState {
+  const next: CartState = {};
+  items.forEach((entry) => {
+    const skuId = Math.trunc(entry.sku.id);
+    if (skuId <= 0) {
+      return;
+    }
+
+    const normalizedQuantity = Math.max(0, Math.floor(entry.quantity));
+    if (normalizedQuantity <= 0) {
+      return;
+    }
+
+    const maxAllowed = Math.max(
+      normalizedQuantity,
+      Math.floor(entry.sku.availableStock),
+    );
+    next[skuId] = {
+      sku: {
+        ...entry.sku,
+        availableStock: maxAllowed,
+      },
+      quantity: Math.min(normalizedQuantity, maxAllowed),
+    };
+  });
+  return next;
 }
 
 function readCartFromStorage(storageKey: string): CartState {
@@ -138,10 +168,6 @@ export function useM02Cart(userId: number | null | undefined): {
     setCart(readCartFromStorage(storageKey));
   }, [storageKey]);
 
-  useEffect(() => {
-    saveCartToStorage(storageKey, cart);
-  }, [cart, storageKey]);
-
   const cartItems = useMemo(() => Object.values(cart), [cart]);
   const cartTotalQuantity = useMemo(
     () => cartItems.reduce((sum, item) => sum + item.quantity, 0),
@@ -155,10 +181,12 @@ export function useM02Cart(userId: number | null | undefined): {
       if (nextQuantity <= 0) {
         return current;
       }
-      return {
+      const next = {
         ...current,
         [item.id]: { sku: item, quantity: nextQuantity },
       };
+      saveCartToStorage(storageKey, next);
+      return next;
     });
   }
 
@@ -172,48 +200,30 @@ export function useM02Cart(userId: number | null | undefined): {
       const nextQuantity = Math.max(0, Math.floor(quantity));
       if (nextQuantity <= 0) {
         const { [skuId]: _, ...rest } = current;
+        saveCartToStorage(storageKey, rest);
         return rest;
       }
 
-      return {
+      const next = {
         ...current,
         [skuId]: {
           sku: entry.sku,
           quantity: Math.min(nextQuantity, entry.sku.availableStock),
         },
       };
-    });
-  }
-
-  function replaceCartItems(items: ReadonlyArray<CartEntry>): void {
-    setCart(() => {
-      const next: CartState = {};
-      items.forEach((entry) => {
-        const skuId = Math.trunc(entry.sku.id);
-        if (skuId <= 0) {
-          return;
-        }
-        const normalizedQuantity = Math.max(0, Math.floor(entry.quantity));
-        if (normalizedQuantity <= 0) {
-          return;
-        }
-        const maxAllowed = Math.max(
-          normalizedQuantity,
-          Math.floor(entry.sku.availableStock),
-        );
-        next[skuId] = {
-          sku: {
-            ...entry.sku,
-            availableStock: maxAllowed,
-          },
-          quantity: Math.min(normalizedQuantity, maxAllowed),
-        };
-      });
+      saveCartToStorage(storageKey, next);
       return next;
     });
   }
 
+  function replaceCartItems(items: ReadonlyArray<CartEntry>): void {
+    const next = buildCartStateFromEntries(items);
+    saveCartToStorage(storageKey, next);
+    setCart(next);
+  }
+
   function clearCart(): void {
+    saveCartToStorage(storageKey, {});
     setCart({});
   }
 

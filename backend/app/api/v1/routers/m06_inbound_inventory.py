@@ -1,4 +1,4 @@
-﻿"""M06 router implementation: inbound and inventory operations."""
+"""M06 router implementation: inbound and inventory operations."""
 
 from __future__ import annotations
 
@@ -120,6 +120,7 @@ def _build_mock_extracted_payload(
         "currency": "CNY",
         "line_items": [
             {
+                "name": "ThinkPad T14 笔记本电脑",
                 "brand": "Lenovo",
                 "model": "ThinkPad T14",
                 "spec": "i7/32G/1T",
@@ -130,9 +131,22 @@ def _build_mock_extracted_payload(
     }
 
 
+def _resolve_sku_name(*, raw_name: str | None, brand: str, model: str) -> str:
+    explicit_name = (raw_name or "").strip()
+    if explicit_name:
+        return explicit_name
+    fallback = f"{brand} {model}".strip()
+    if fallback:
+        return fallback
+    raise AppException(
+        code="VALIDATION_ERROR",
+        message="物料名称不能为空。",
+    )
+
+
 def _normalize_sku_payload(
     payload: OcrInboundConfirmSkuPayload,
-) -> tuple[int, str, str, str, Decimal, str | None, SkuStockMode, int]:
+) -> tuple[int, bool, str, str, str, str, Decimal, str | None, SkuStockMode, int]:
     brand = payload.brand.strip()
     model = payload.model.strip()
     spec = payload.spec.strip()
@@ -148,6 +162,8 @@ def _normalize_sku_payload(
 
     return (
         payload.category_id,
+        bool(payload.is_visible),
+        _resolve_sku_name(raw_name=payload.name, brand=brand, model=model),
         brand,
         model,
         spec,
@@ -178,6 +194,8 @@ def _create_sku(
 ) -> Sku:
     (
         category_id,
+        is_visible,
+        name,
         brand,
         model,
         spec,
@@ -191,6 +209,8 @@ def _create_sku(
     sku = Sku(
         id=_next_bigint_id(db, Sku),
         category_id=category_id,
+        is_visible=is_visible,
+        name=name,
         brand=brand,
         model=model,
         spec=spec,
@@ -211,6 +231,8 @@ def _resolve_or_create_sku(
 ) -> Sku:
     (
         category_id,
+        _is_visible,
+        name,
         brand,
         model,
         spec,
@@ -233,6 +255,8 @@ def _resolve_or_create_sku(
         .limit(1)
     )
     if existing is not None:
+        if not (existing.name or "").strip():
+            existing.name = name
         if existing.stock_mode != stock_mode:
             raise AppException(
                 code="VALIDATION_ERROR",
@@ -248,6 +272,8 @@ def _resolve_or_create_sku(
     sku = Sku(
         id=_next_bigint_id(db, Sku),
         category_id=category_id,
+        is_visible=bool(payload.is_visible),
+        name=name,
         brand=brand,
         model=model,
         spec=spec,
@@ -377,6 +403,8 @@ def _serialize_sku(sku: Sku) -> dict[str, object]:
     return {
         "id": sku.id,
         "category_id": sku.category_id,
+        "is_visible": bool(sku.is_visible),
+        "name": sku.name,
         "brand": sku.brand,
         "model": sku.model,
         "spec": sku.spec,
@@ -554,6 +582,7 @@ def list_admin_skus(
         like = f"%{normalized_q}%"
         stmt = stmt.where(
             or_(
+                Sku.name.like(like),
                 Sku.brand.like(like),
                 Sku.model.like(like),
                 Sku.spec.like(like),
@@ -593,6 +622,8 @@ def update_admin_sku(
 
     (
         category_id,
+        is_visible,
+        name,
         brand,
         model,
         spec,
@@ -604,6 +635,8 @@ def update_admin_sku(
     _assert_category_exists(db, category_id=category_id)
 
     record.category_id = category_id
+    record.is_visible = is_visible
+    record.name = name
     record.brand = brand
     record.model = model
     record.spec = spec
@@ -936,6 +969,7 @@ def get_inventory_summary(
         like = f"%{normalized_q}%"
         sku_stmt = sku_stmt.where(
             or_(
+                Sku.name.like(like),
                 Sku.brand.like(like),
                 Sku.model.like(like),
                 Sku.spec.like(like),
@@ -964,6 +998,7 @@ def get_inventory_summary(
         summary_by_sku[int(sku.id)] = {
             "sku_id": int(sku.id),
             "category_id": sku.category_id,
+            "name": sku.name,
             "brand": sku.brand,
             "model": sku.model,
             "spec": sku.spec,

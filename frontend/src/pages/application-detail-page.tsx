@@ -28,6 +28,20 @@ function groupAssetIdsBySku(detail: ApplicationDetailResult | null): Record<numb
   );
 }
 
+function toMaterialName(
+  name: string | null | undefined,
+  brand: string | null | undefined,
+  model: string | null | undefined,
+  skuId: number,
+): string {
+  const explicit = (name ?? "").trim();
+  if (explicit) {
+    return explicit;
+  }
+  const fallback = `${brand ?? ""} ${model ?? ""}`.trim();
+  return fallback || `SKU ${skuId}`;
+}
+
 export function ApplicationDetailPage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const applicationId = Number(id ?? "0");
@@ -206,7 +220,7 @@ export function ApplicationDetailPage(): JSX.Element {
                           <span className="muted-text">无图</span>
                         )}
                       </td>
-                      <td>{`${item.brand ?? ""} ${item.model ?? ""}`.trim() || `SKU ${item.skuId}`}</td>
+                      <td>{toMaterialName(item.name, item.brand, item.model, item.skuId)}</td>
                       <td>{item.model ?? "-"}</td>
                       <td>{item.brand ?? "-"}</td>
                       <td>{item.spec ?? "-"}</td>
@@ -249,7 +263,7 @@ export function ApplicationDetailPage(): JSX.Element {
               <div className="approval-assign-grid page-form-grid">
                 {detail.application.items.map((item) => (
                   <label key={item.id} className="store-field">
-                    {`${item.brand ?? ""} ${item.model ?? ""}`.trim() || `SKU ${item.skuId}`} 资产编号（逗号分隔）
+                    {toMaterialName(item.name, item.brand, item.model, item.skuId)} 资产编号（逗号分隔）
                     <input
                       className="approval-comment-input"
                       value={assetDraftBySku[item.skuId] ?? ""}

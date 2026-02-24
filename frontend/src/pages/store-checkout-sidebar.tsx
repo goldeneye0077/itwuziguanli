@@ -48,6 +48,30 @@ function hasManualAddressValue(address: ManualAddressForm): boolean {
   );
 }
 
+function extractSkuIdsFromError(error: AuthApiError): number[] {
+  const details = error.details;
+  if (!details || typeof details !== "object") {
+    return [];
+  }
+
+  const payload = details as { sku_id?: unknown; sku_ids?: unknown };
+  const result: number[] = [];
+
+  if (typeof payload.sku_id === "number" && Number.isFinite(payload.sku_id)) {
+    result.push(Math.trunc(payload.sku_id));
+  }
+
+  if (Array.isArray(payload.sku_ids)) {
+    payload.sku_ids.forEach((item) => {
+      if (typeof item === "number" && Number.isFinite(item)) {
+        result.push(Math.trunc(item));
+      }
+    });
+  }
+
+  return Array.from(new Set(result.filter((item) => item > 0)));
+}
+
 function IconCart(): JSX.Element {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -282,6 +306,17 @@ export function StoreCheckoutSidebar(props: {
       clearCart();
       setAiPrecheck(null);
     } catch (error) {
+      if (
+        error instanceof AuthApiError &&
+        (error.code === "SKU_NOT_VISIBLE" || error.code === "SKU_NOT_FOUND")
+      ) {
+        const skuIds = extractSkuIdsFromError(error);
+        if (skuIds.length) {
+          skuIds.forEach((skuId) => setCartQuantity(skuId, 0));
+          setErrorMessage(`以下物料当前不可提交，已从购物车移除：${skuIds.join("、")}`);
+          return;
+        }
+      }
       setErrorMessage(error instanceof AuthApiError ? error.message : "提交申请失败。");
     } finally {
       setIsSubmitting(false);
@@ -338,7 +373,7 @@ export function StoreCheckoutSidebar(props: {
               <li key={entry.sku.id} className="store-checkout__cart-item">
                 <div className="store-checkout__cart-main">
                   <p className="store-checkout__cart-title">
-                    {entry.sku.brand} {entry.sku.model}
+                    {entry.sku.name || `${entry.sku.brand} ${entry.sku.model}`.trim()}
                   </p>
                   <p className="store-checkout__cart-meta">规格：{entry.sku.spec}</p>
                 </div>

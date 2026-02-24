@@ -236,7 +236,7 @@ export function StorePage(): JSX.Element {
                   </div>
                   <div className="store-item-body">
                     <h4 className="store-item-title">
-                      {item.brand} {item.model}
+                      {item.name || `${item.brand} ${item.model}`.trim()}
                     </h4>
                     <p className="store-item-meta">规格：{item.spec}</p>
                     <p

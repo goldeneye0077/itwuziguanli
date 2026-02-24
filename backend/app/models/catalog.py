@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, ForeignKey, Index, Integer, Numeric, String, text
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, Integer, Numeric, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -47,6 +47,7 @@ class Sku(TimestampMixin, Base):
     __tablename__ = "sku"
     __table_args__ = (
         Index("idx_sku_category", "category_id"),
+        Index("idx_sku_name", "name"),
         Index("idx_sku_brand_model", "brand", "model"),
     )
 
@@ -55,6 +56,18 @@ class Sku(TimestampMixin, Base):
         BigInteger,
         ForeignKey("category.id", name="fk_sku_category", ondelete="RESTRICT"),
         nullable=False,
+    )
+    is_visible: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    name: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+        default="",
+        server_default=text("''"),
     )
     brand: Mapped[str] = mapped_column(String(64), nullable=False)
     model: Mapped[str] = mapped_column(String(128), nullable=False)

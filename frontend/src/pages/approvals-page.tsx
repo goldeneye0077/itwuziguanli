@@ -18,6 +18,20 @@ import {
 
 type ApprovalDecision = "APPROVE" | "REJECT";
 
+function toMaterialName(
+  name: string | null | undefined,
+  brand: string | null | undefined,
+  model: string | null | undefined,
+  skuId: number,
+): string {
+  const explicit = (name ?? "").trim();
+  if (explicit) {
+    return explicit;
+  }
+  const fallback = `${brand ?? ""} ${model ?? ""}`.trim();
+  return fallback || `SKU ${skuId}`;
+}
+
 export function ApprovalsPage({
   node,
 }: {
@@ -162,7 +176,10 @@ export function ApprovalsPage({
                     状态：{toApplicationStatusLabel(item.status)} - 交付：{toDeliveryTypeLabel(item.deliveryType)} -
                     物料：
                     {item.itemsSummary
-                      .map((summary) => `${summary.brand ?? ""} ${summary.model ?? ""} x${summary.quantity}`.trim())
+                      .map(
+                        (summary) =>
+                          `${toMaterialName(summary.name, summary.brand, summary.model, summary.skuId)} x${summary.quantity}`.trim(),
+                      )
                       .join("、")}
                   </p>
 
@@ -315,7 +332,7 @@ export function ApprovalsPage({
                                 <span className="muted-text">无图</span>
                               )}
                             </td>
-                            <td>{`${entry.brand ?? ""} ${entry.model ?? ""}`.trim() || `SKU ${entry.skuId}`}</td>
+                            <td>{toMaterialName(entry.name, entry.brand, entry.model, entry.skuId)}</td>
                             <td>{entry.model ?? "-"}</td>
                             <td>{entry.brand ?? "-"}</td>
                             <td>{entry.spec ?? "-"}</td>
