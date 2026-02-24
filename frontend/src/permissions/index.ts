@@ -23,6 +23,7 @@ export const ROUTE_PERMISSION_ENTRIES: readonly RoutePermissionEntry[] = [
   { routePath: "/materials", requiredPermissions: [PERMISSION_KEYS.inventoryRead] },
   { routePath: "/analytics", requiredPermissions: [PERMISSION_KEYS.reportsRead] },
   { routePath: "/copilot", requiredPermissions: [PERMISSION_KEYS.reportsRead] },
+  { routePath: "/announcements/manage", requiredPermissions: [PERMISSION_KEYS.rbacUpdate] },
   { routePath: "/admin/rbac", requiredPermissions: [PERMISSION_KEYS.rbacUpdate] },
   { routePath: "/admin/crud", requiredPermissions: [PERMISSION_KEYS.rbacUpdate] },
 ] as const;
@@ -41,6 +42,7 @@ export const ACTION_PERMISSION_ENTRIES: readonly ActionPermissionEntry[] = [
   { actionId: "analytics.apply-filter", requiredPermissions: [PERMISSION_KEYS.reportsRead] },
   { actionId: "analytics.export-report", requiredPermissions: [PERMISSION_KEYS.reportsRead] },
   { actionId: "analytics.run-copilot", requiredPermissions: [PERMISSION_KEYS.reportsRead] },
+  { actionId: "announcements.manage", requiredPermissions: [PERMISSION_KEYS.rbacUpdate] },
 ] as const;
 
 const ROUTE_PERMISSION_MAP = Object.fromEntries(

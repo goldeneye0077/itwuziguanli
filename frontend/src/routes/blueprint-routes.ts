@@ -171,6 +171,12 @@ export const BLUEPRINT_ROUTE_META = [
     primaryActionIds: ["analytics.run-copilot"],
   },
   {
+    route: "/announcements/manage",
+    roles: ["SUPER_ADMIN"],
+    pageType: "admin-crud",
+    primaryActionIds: ["announcements.manage"],
+  },
+  {
     route: "/admin/rbac",
     roles: ["SUPER_ADMIN"],
     pageType: "admin-rbac",

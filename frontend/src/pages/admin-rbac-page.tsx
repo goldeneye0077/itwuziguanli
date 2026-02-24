@@ -48,6 +48,7 @@ const ROUTE_LABELS: Record<string, string> = {
   "/materials": "物料管理",
   "/analytics": "分析报表",
   "/copilot": "智能问答",
+  "/announcements/manage": "公告栏管理",
   "/admin/rbac": "权限治理",
   "/admin/crud": "数据面板",
 };
@@ -66,6 +67,7 @@ const ACTION_LABELS: Record<string, string> = {
   "analytics.apply-filter": "应用筛选",
   "analytics.export-report": "导出报表",
   "analytics.run-copilot": "执行智能问答",
+  "announcements.manage": "公告栏管理",
 };
 
 const ROUTE_CANDIDATE_KEYS = Array.from(

@@ -131,6 +131,7 @@ DEFAULT_ROUTE_UI_GUARDS: tuple[dict[str, object], ...] = (
     {"key": "/materials", "required_permissions": [PERMISSION_INVENTORY_READ]},
     {"key": "/analytics", "required_permissions": [PERMISSION_REPORTS_READ]},
     {"key": "/copilot", "required_permissions": [PERMISSION_REPORTS_READ]},
+    {"key": "/announcements/manage", "required_permissions": [PERMISSION_RBAC_UPDATE]},
     {"key": "/admin/rbac", "required_permissions": [PERMISSION_RBAC_UPDATE]},
     {"key": "/admin/crud", "required_permissions": [PERMISSION_RBAC_UPDATE]},
 )
@@ -152,6 +153,7 @@ DEFAULT_ACTION_UI_GUARDS: tuple[dict[str, object], ...] = (
     {"key": "analytics.apply-filter", "required_permissions": [PERMISSION_REPORTS_READ]},
     {"key": "analytics.export-report", "required_permissions": [PERMISSION_REPORTS_READ]},
     {"key": "analytics.run-copilot", "required_permissions": [PERMISSION_REPORTS_READ]},
+    {"key": "announcements.manage", "required_permissions": [PERMISSION_RBAC_UPDATE]},
 )
 
 

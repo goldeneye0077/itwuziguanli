@@ -680,7 +680,7 @@ export function MaterialsPage(): JSX.Element {
       ) : null}
 
       <section className="app-shell__grid inbound-grid" aria-label="物料管理面板">
-        <article className="app-shell__card">
+        <article className="app-shell__card inbound-wide">
           <div className="page-card-head">
             <p className="app-shell__section-label">分类维护</p>
             <h3 className="app-shell__card-title">分类树 CRUD（支持大类/小类）</h3>
@@ -931,7 +931,7 @@ export function MaterialsPage(): JSX.Element {
           </div>
         </article>
 
-        <article className="app-shell__card">
+        <article className="app-shell__card inbound-wide">
           <div className="page-card-head">
             <p className="app-shell__section-label">物料维护</p>
             <h3 className="app-shell__card-title">物料（SKU）CRUD（不含库存数量）</h3>
@@ -1365,4 +1365,5 @@ export function MaterialsPage(): JSX.Element {
     </div>
   );
 }
+
 

@@ -18,6 +18,7 @@ import {
   FileText,
   LayoutDashboard,
   LogOut,
+  Megaphone,
   Package,
   PieChart,
   RotateCcw,
@@ -37,6 +38,7 @@ import {
 import {
   AdminCrudPage,
   AdminRbacPage,
+  AnnouncementManagePage,
   AnalyticsPage,
   AssetDetailPage,
   AssetLifecyclePage,
@@ -107,6 +109,7 @@ const ROUTE_LABELS: Record<string, string> = {
   "/admin/assets/scrap": "资产报废",
   "/analytics": "分析报表",
   "/copilot": "智能问答",
+  "/announcements/manage": "公告栏管理",
   "/admin/rbac": "权限治理",
   "/admin/crud": "数据面板",
 };
@@ -129,6 +132,7 @@ const ROUTE_ICONS: Record<string, LucideIcon> = {
   "/admin/assets/scrap": Trash2,
   "/analytics": BarChart2,
   "/copilot": Bot,
+  "/announcements/manage": Megaphone,
   "/admin/rbac": Shield,
   "/admin/crud": Database,
 };
@@ -465,6 +469,8 @@ function resolveProtectedPage(
     case "/analytics":
     case "/copilot":
       return <AnalyticsPage routePath={meta.route} />;
+    case "/announcements/manage":
+      return <AnnouncementManagePage />;
     case "/admin/rbac":
       return <AdminRbacPage />;
     case "/admin/crud":

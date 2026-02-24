@@ -1431,3 +1431,79 @@
   - `task_plan.md`
   - `findings.md`
   - `progress.md`
+
+## Session: 2026-02-24（公告栏管理导航与功能完善）
+### Task: 新增公告栏管理菜单与独立管理页
+- **Status:** in_progress
+- **Started:** 2026-02-24
+- Actions taken:
+  - 已完成现状盘点（路由、权限、公告接口、现有数据面板实现）。
+  - 已更新 `task_plan.md`、`findings.md`，进入代码实施阶段。
+- Files created/modified:
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+## Session: 2026-02-24（公告栏管理导航与功能完善）
+### Task: 新增公告栏管理菜单与独立管理页
+- **Status:** complete
+- **Completed:** 2026-02-24
+- Actions taken:
+  - 新增页面：`frontend/src/pages/announcement-manage-page.tsx`。
+  - 导航/路由接入：
+    - `frontend/src/routes/blueprint-routes.ts` 新增 `/announcements/manage`；
+    - `frontend/src/routes/app-routes.tsx` 新增菜单文案、图标、页面路由渲染；
+    - `frontend/src/pages/index.ts` 导出新页面。
+  - 权限链路补齐：
+    - `frontend/src/permissions/index.ts` 新增 route/action 映射；
+    - `backend/app/api/v1/routers/m08_admin.py` 默认 UI guard 增加新 route/action；
+    - `frontend/src/pages/admin-rbac-page.tsx` 补齐新 route/action 中文标签。
+  - 样式补充：`frontend/src/styles/index.css` 新增公告管理页面布局样式。
+- Tests & verification:
+  - `npm --prefix frontend run typecheck` -> PASS
+  - `pytest -q backend/tests/test_step17_m08_admin.py` -> PASS（3 passed）
+  - `powershell -ExecutionPolicy Bypass -File deploy/scripts/refresh-dev.ps1` -> PASS
+  - `curl.exe -s http://127.0.0.1:18080/healthz` -> `ok`（PASS）
+  - `curl.exe -s http://127.0.0.1:18080/api/healthz` -> `{"status":"ok"}`（PASS）
+- Files created/modified:
+  - `frontend/src/pages/announcement-manage-page.tsx`
+  - `frontend/src/routes/blueprint-routes.ts`
+  - `frontend/src/routes/app-routes.tsx`
+  - `frontend/src/pages/index.ts`
+  - `frontend/src/permissions/index.ts`
+  - `frontend/src/pages/admin-rbac-page.tsx`
+  - `frontend/src/styles/index.css`
+  - `backend/app/api/v1/routers/m08_admin.py`
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+## Session: 2026-02-24（materials 卡片满宽重排）
+### Task: 分类维护/物料维护卡片改为上下满宽
+- **Status:** in_progress
+- **Started:** 2026-02-24
+- Actions taken:
+  - 已定位布局根因：`inbound-grid` 两列导致两张卡片并排。
+  - 已更新 `task_plan.md`、`findings.md`，进入代码调整阶段。
+- Files created/modified:
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+## Session: 2026-02-24（materials 卡片满宽重排）
+### Task: 分类维护/物料维护卡片改为上下满宽
+- **Status:** complete
+- **Completed:** 2026-02-24
+- Actions taken:
+  - `frontend/src/pages/materials-page.tsx`：两张主卡片改为 `app-shell__card inbound-wide`。
+  - 保持卡片顺序不变，渲染结果为“分类维护在上，物料维护在下”。
+- Tests & verification:
+  - `npm --prefix frontend run typecheck` -> PASS
+  - `powershell -ExecutionPolicy Bypass -File deploy/scripts/refresh-dev.ps1` -> PASS
+  - `curl.exe -s http://127.0.0.1:18080/healthz` -> `ok`（PASS）
+  - `curl.exe -s http://127.0.0.1:18080/api/healthz` -> `{"status":"ok"}`（PASS）
+- Files created/modified:
+  - `frontend/src/pages/materials-page.tsx`
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`

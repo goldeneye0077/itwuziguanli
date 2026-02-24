@@ -883,3 +883,58 @@ ame��
 - [x] 前端类型检查通过：`npm --prefix frontend run typecheck`。
 - [x] Docker 刷新通过：`powershell -ExecutionPolicy Bypass -File deploy/scripts/refresh-dev.ps1`。
 - [x] 健康检查通过：`/healthz=ok`，`/api/healthz={"status":"ok"}`。
+
+## Active Task（2026-02-24 公告栏管理导航与功能完善）
+### Goal
+- 在左侧导航新增“公告栏管理”菜单。
+- 新增独立公告栏管理页面，提供可视化公告 CRUD、发布/下线、分页查询与预览能力。
+
+### Current Phase
+- Phase A1-Implementation（进行中）
+
+### 本轮实施清单
+- [x] 记录需求与方案（planning-with-files）。
+- [ ] 新增公告管理页面组件与 API 交互。
+- [ ] 路由/导航新增“公告栏管理”并配置图标。
+- [ ] 补齐权限映射（route/action + 默认 UI guard）。
+- [ ] 前端 typecheck。
+- [ ] Docker 刷新与健康检查。
+
+## 收尾更新（2026-02-24 公告栏管理导航与功能完善）
+### Current Phase
+- Phase A2-Closed（已完成）
+
+### 收尾验收
+- [x] 新增独立页面：`/announcements/manage`（公告栏管理）。
+- [x] 左侧导航新增“公告栏管理”菜单，并配置图标。
+- [x] 公告管理实现：关键字查询、状态筛选、分页、创建、编辑、删除、发布、下线、内容预览。
+- [x] 权限映射补齐：route `/announcements/manage` 与 action `announcements.manage`。
+- [x] 前端检查通过：`npm --prefix frontend run typecheck`。
+- [x] 后端回归通过：`pytest -q backend/tests/test_step17_m08_admin.py`。
+- [x] Docker 刷新通过：`powershell -ExecutionPolicy Bypass -File deploy/scripts/refresh-dev.ps1`。
+- [x] 健康检查通过：`/healthz=ok`，`/api/healthz={"status":"ok"}`。
+
+## Active Task（2026-02-24 materials 卡片满宽重排）
+### Goal
+- `/materials` 页面将“物料维护”卡片放到“分类维护”卡片下方。
+- 页面卡片改为横向满宽铺放（每张卡片占整行）。
+
+### Current Phase
+- Phase L1-Implementation（进行中）
+
+### 本轮实施清单
+- [x] planning-with-files 三文档更新。
+- [ ] 调整 materials 页面卡片布局为满宽单列。
+- [ ] 前端 typecheck。
+- [ ] Docker 刷新与健康检查。
+
+## 收尾更新（2026-02-24 materials 卡片满宽重排）
+### Current Phase
+- Phase L2-Closed（已完成）
+
+### 收尾验收
+- [x] `/materials` 分类维护与物料维护卡片均改为满宽展示。
+- [x] 物料维护卡片在分类维护卡片下方显示。
+- [x] 前端类型检查通过：`npm --prefix frontend run typecheck`。
+- [x] Docker 刷新通过：`powershell -ExecutionPolicy Bypass -File deploy/scripts/refresh-dev.ps1`。
+- [x] 健康检查通过：`/healthz=ok`，`/api/healthz={"status":"ok"}`。

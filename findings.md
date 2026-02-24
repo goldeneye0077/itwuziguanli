@@ -536,3 +536,39 @@ ame��ȱʧʱ����ƴ�ӡ�
 - “新增物料”表单已移动到卡片上方区域，点击按钮可展开或收起。
 - 保留原有创建逻辑与字段，不改后端接口，仅优化前端交互与可见性。
 - 相关样式新增 `materials-card-toolbar`、`materials-create-sku-trigger`，确保按钮更显眼。
+
+## R10 需求确认与决策（2026-02-24 公告栏管理）
+### 需求
+- 导航菜单新增“公告栏管理”。
+- 完善公告栏管理能力，避免只能通过通用 CRUD 面板低效维护。
+
+### 决策
+- 新增独立页面 `/announcements/manage`，提供公告表格、关键字查询、状态筛选、分页、创建、编辑、删除、发布、下线、内容预览。
+- 复用现有后端 `admin/crud/announcements` 接口，不新增数据库结构。
+- 路由角色先与后台管理一致：`SUPER_ADMIN`；权限映射使用 `RBAC_ADMIN:UPDATE`。
+
+## R10 实施结果（2026-02-24 公告栏管理）
+- 新增 `frontend/src/pages/announcement-manage-page.tsx`，提供公告可视化管理能力：
+  - 查询：关键字、状态筛选、分页；
+  - 操作：创建、编辑、删除、发布、下线；
+  - 预览：支持正文内容预览。
+- 新增导航与路由：`/announcements/manage`，菜单名称“公告栏管理”。
+- 权限链路补齐：
+  - 前端 `permissions` 新增 route/action 映射；
+  - 后端 `m08_admin` 默认 UI guard 新增 route/action 项；
+  - RBAC 页面补齐新路由与动作中文标签。
+- 本期复用 `admin/crud/announcements` 后端接口，不新增数据库结构。
+
+## R11 需求确认与决策（2026-02-24 materials 卡片布局）
+### 需求
+- 物料维护卡片移动到分类维护卡片下方。
+- 所有卡片都横向铺满。
+
+### 决策
+- 保持卡片顺序不变（分类维护在前、物料维护在后），并将两张卡片都设置为跨两列满宽（`inbound-wide`），在 `inbound-grid` 中按纵向顺序全宽展示。
+- 不改业务逻辑，仅调整布局类名。
+
+## R11 实施结果（2026-02-24 materials 卡片布局）
+- `frontend/src/pages/materials-page.tsx` 中两张主卡片均增加 `inbound-wide` 类。
+- 在 `inbound-grid` 双列网格下，卡片跨两列显示，形成上下满宽布局。
+- 不涉及接口与业务逻辑变更，仅调整页面布局。

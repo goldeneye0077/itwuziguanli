@@ -23,3 +23,4 @@ export { AssetLifecyclePage } from "./asset-lifecycle-page";
 export { AnalyticsPage } from "./analytics-page";
 export { AdminRbacPage } from "./admin-rbac-page";
 export { AdminCrudPage } from "./admin-crud-page";
+export { AnnouncementManagePage } from "./announcement-manage-page";
