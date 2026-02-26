@@ -30,7 +30,7 @@ from ....models.enums import (
 )
 from ....models.inventory import Asset, StockFlow
 from ....models.organization import SysUser
-from ....models.sku_stock import SkuStock
+from ....models.sku_stock import SkuStock, SkuStockFlow
 from ....schemas.common import ApiResponse, build_success_response
 from ....schemas.m03 import (
     ApplicationApproveRequest,
@@ -178,6 +178,80 @@ def _unlock_application_assets(
 
 def _create_pickup_qr_string(application: Application) -> str:
     return f"pickup://application/{application.id}?code={application.pickup_code}"
+
+
+def _resolve_outbound_timeline(
+    db: Session,
+    *,
+    application_id: int,
+) -> dict[str, object] | None:
+    latest_asset_event = db.execute(
+        select(
+            StockFlow.id,
+            StockFlow.action,
+            StockFlow.operator_user_id,
+            StockFlow.occurred_at,
+        )
+        .where(
+            StockFlow.related_application_id == application_id,
+            StockFlow.action.in_([StockFlowAction.OUTBOUND, StockFlowAction.SHIP]),
+        )
+        .order_by(StockFlow.occurred_at.desc(), StockFlow.id.desc())
+        .limit(1)
+    ).first()
+    latest_quantity_event = db.execute(
+        select(
+            SkuStockFlow.id,
+            SkuStockFlow.action,
+            SkuStockFlow.operator_user_id,
+            SkuStockFlow.occurred_at,
+        )
+        .where(
+            SkuStockFlow.related_application_id == application_id,
+            SkuStockFlow.action.in_(
+                [SkuStockFlowAction.OUTBOUND, SkuStockFlowAction.SHIP]
+            ),
+        )
+        .order_by(SkuStockFlow.occurred_at.desc(), SkuStockFlow.id.desc())
+        .limit(1)
+    ).first()
+
+    candidates: list[dict[str, object]] = []
+    if latest_asset_event is not None:
+        candidates.append(
+            {
+                "id": int(latest_asset_event.id),
+                "action": latest_asset_event.action.value,
+                "operator_user_id": int(latest_asset_event.operator_user_id),
+                "occurred_at": latest_asset_event.occurred_at,
+            }
+        )
+    if latest_quantity_event is not None:
+        candidates.append(
+            {
+                "id": int(latest_quantity_event.id),
+                "action": latest_quantity_event.action.value,
+                "operator_user_id": int(latest_quantity_event.operator_user_id),
+                "occurred_at": latest_quantity_event.occurred_at,
+            }
+        )
+    if not candidates:
+        return None
+
+    candidates.sort(
+        key=lambda item: (
+            item["occurred_at"],
+            int(item["id"]),
+            1 if item["action"] == "SHIP" else 0,
+        ),
+        reverse=True,
+    )
+    latest = candidates[0]
+    return {
+        "action": str(latest["action"]),
+        "operator_user_id": int(latest["operator_user_id"]),
+        "occurred_at": _to_iso8601(latest["occurred_at"]),
+    }
 
 
 @router.get("/approvals/inbox", response_model=ApiResponse)
@@ -357,6 +431,10 @@ def get_application_detail(
         .scalars()
         .all()
     )
+    outbound_timeline = _resolve_outbound_timeline(
+        db,
+        application_id=application.id,
+    )
 
     title_labels = [sku.name or sku.model or sku.brand for _, sku in item_rows]
     resolved_title = application.title or _build_application_title(title_labels)
@@ -417,6 +495,7 @@ def get_application_detail(
                 }
                 for row in approval_history
             ],
+            "outbound_timeline": outbound_timeline,
             "logistics": (
                 {
                     "id": logistics.id,

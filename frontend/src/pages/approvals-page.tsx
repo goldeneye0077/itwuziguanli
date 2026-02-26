@@ -167,7 +167,9 @@ export function ApprovalsPage({
               const rejectReason = rejectReasonByAppId[item.applicationId] ?? "";
               return (
                 <li key={item.applicationId} className="dashboard-list__item">
-                  <p className="dashboard-list__title">{item.title}</p>
+                  <p className="dashboard-list__title">
+                    申请单号：{item.applicationId} · {item.title}
+                  </p>
                   <p className="dashboard-list__meta">
                     申请人：{item.applicant.name} - 部门：{item.applicant.departmentName ?? item.applicant.departmentId} -
                     {toDateLabel(item.createdAt)}

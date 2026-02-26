@@ -1,4 +1,4 @@
-﻿import type { AppRole } from "../routes/blueprint-routes";
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import type { AppRole } from "../routes/blueprint-routes";
 
 const API_PREFIX = "/api/v1";
 
@@ -265,6 +265,13 @@ interface ApplicationDetailResponseBody {
     } | null;
     readonly created_at: string;
   }>;
+  readonly outbound_timeline:
+    | {
+        readonly action: "OUTBOUND" | "SHIP";
+        readonly operator_user_id: number;
+        readonly occurred_at: string;
+      }
+    | null;
   readonly logistics: {
     readonly id: number;
     readonly application_id: number;
@@ -360,6 +367,12 @@ interface OutboundExpressQueueItemResponseBody {
   readonly applicant_name: string | null;
   readonly status: string;
   readonly created_at: string;
+  readonly receiver_name: string | null;
+  readonly receiver_phone: string | null;
+  readonly province: string | null;
+  readonly city: string | null;
+  readonly district: string | null;
+  readonly detail: string | null;
   readonly items: Array<{
     readonly sku_id: number;
     readonly quantity: number;
@@ -827,6 +840,13 @@ export interface ApplicationDetailResult {
       | null;
     readonly createdAt: string;
   }>;
+  readonly outboundTimeline:
+    | {
+        readonly action: "OUTBOUND" | "SHIP";
+        readonly operatorUserId: number;
+        readonly occurredAt: string;
+      }
+    | null;
   readonly logistics:
     | {
         readonly id: number;
@@ -914,6 +934,12 @@ export interface OutboundExpressQueueItem {
   readonly applicantName: string | null;
   readonly status: string;
   readonly createdAt: string;
+  readonly receiverName: string | null;
+  readonly receiverPhone: string | null;
+  readonly province: string | null;
+  readonly city: string | null;
+  readonly district: string | null;
+  readonly detail: string | null;
   readonly items: Array<{
     readonly skuId: number;
     readonly quantity: number;
@@ -2046,6 +2072,13 @@ export async function fetchApplicationDetail(
       aiRecommendation: item.ai_recommendation_json,
       createdAt: item.created_at,
     })),
+    outboundTimeline: envelope.data.outbound_timeline
+      ? {
+          action: envelope.data.outbound_timeline.action,
+          operatorUserId: envelope.data.outbound_timeline.operator_user_id,
+          occurredAt: envelope.data.outbound_timeline.occurred_at,
+        }
+      : null,
     logistics: envelope.data.logistics
       ? {
           id: envelope.data.logistics.id,
@@ -2396,6 +2429,12 @@ export async function fetchOutboundExpressQueue(
       applicantName: item.applicant_name ?? null,
       status: item.status,
       createdAt: item.created_at,
+      receiverName: item.receiver_name ?? null,
+      receiverPhone: item.receiver_phone ?? null,
+      province: item.province ?? null,
+      city: item.city ?? null,
+      district: item.district ?? null,
+      detail: item.detail ?? null,
       items: item.items.map((row) => ({
         skuId: row.sku_id,
         quantity: row.quantity,
@@ -2416,6 +2455,12 @@ export async function shipOutbound(
     readonly applicationId: number;
     readonly carrier: string;
     readonly trackingNo: string;
+    readonly receiverName?: string;
+    readonly receiverPhone?: string;
+    readonly province?: string;
+    readonly city?: string;
+    readonly district?: string;
+    readonly detail?: string;
     readonly shippedAt?: string;
   },
 ): Promise<{ applicationId: number; status: string }> {
@@ -2430,6 +2475,12 @@ export async function shipOutbound(
       application_id: input.applicationId,
       carrier: input.carrier,
       tracking_no: input.trackingNo,
+      receiver_name: input.receiverName,
+      receiver_phone: input.receiverPhone,
+      province: input.province,
+      city: input.city,
+      district: input.district,
+      detail: input.detail,
       shipped_at: input.shippedAt,
     }),
   });

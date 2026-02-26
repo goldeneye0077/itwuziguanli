@@ -31,11 +31,19 @@ function formatItemSummary(
     .join("，");
 }
 
-const PICKUP_VERIFY_TYPE_LABELS: Record<"QR" | "CODE" | "APPLICATION_ID", string> = {
-  APPLICATION_ID: "申请单编号",
-  CODE: "取件码",
-  QR: "二维码",
-};
+function composeExpressAddress(item: {
+  readonly province: string | null;
+  readonly city: string | null;
+  readonly district: string | null;
+  readonly detail: string | null;
+}): string {
+  return [item.province, item.city, item.district, item.detail]
+    .map((value) => (value ?? "").trim())
+    .filter((value) => value.length > 0)
+    .join("");
+}
+
+const PICKUP_VERIFY_TYPE_LABEL = "取件码";
 
 type OutboundTab = "PICKUP" | "EXPRESS" | "RECORDS";
 
@@ -147,12 +155,14 @@ export function OutboundPage(): JSX.Element {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const [pickupVerifyType, setPickupVerifyType] = useState<"QR" | "CODE" | "APPLICATION_ID">(
-    "CODE",
-  );
+  const pickupVerifyType: "CODE" = "CODE";
+  const [selectedPickupApplicationId, setSelectedPickupApplicationId] = useState<number | null>(null);
   const [pickupValue, setPickupValue] = useState("");
 
   const [shipApplicationId, setShipApplicationId] = useState("");
+  const [shipReceiverName, setShipReceiverName] = useState("");
+  const [shipReceiverPhone, setShipReceiverPhone] = useState("");
+  const [shipAddress, setShipAddress] = useState("");
   const [shipCarrier, setShipCarrier] = useState("");
   const [shipTrackingNo, setShipTrackingNo] = useState("");
 
@@ -217,6 +227,18 @@ export function OutboundPage(): JSX.Element {
   }, [loadQueues]);
 
   useEffect(() => {
+    if (selectedPickupApplicationId === null) {
+      return;
+    }
+    const existsInQueue = pickupQueue.some(
+      (item) => item.applicationId === selectedPickupApplicationId,
+    );
+    if (!existsInQueue) {
+      setSelectedPickupApplicationId(null);
+    }
+  }, [pickupQueue, selectedPickupApplicationId]);
+
+  useEffect(() => {
     if (activeTab === "RECORDS" && !recordsLoaded && canFetchRecords) {
       void loadRecords(1, recordFilters);
     }
@@ -228,7 +250,7 @@ export function OutboundPage(): JSX.Element {
     }
     const normalizedValue = pickupValue.trim();
     if (!normalizedValue) {
-      setErrorMessage("请输入取件核验值。");
+      setErrorMessage("请输入取件码。");
       return;
     }
 
@@ -268,6 +290,14 @@ export function OutboundPage(): JSX.Element {
       setErrorMessage("承运商和运单号不能为空。");
       return;
     }
+    if (
+      !shipReceiverName.trim() ||
+      !shipReceiverPhone.trim() ||
+      !shipAddress.trim()
+    ) {
+      setErrorMessage("收件人姓名、电话和地址信息不能为空。");
+      return;
+    }
 
     setIsShipping(true);
     setErrorMessage(null);
@@ -275,11 +305,17 @@ export function OutboundPage(): JSX.Element {
     try {
       const result = await shipOutbound(accessToken, {
         applicationId: parsedApplicationId,
+        receiverName: shipReceiverName.trim(),
+        receiverPhone: shipReceiverPhone.trim(),
+        detail: shipAddress.trim(),
         carrier: shipCarrier.trim(),
         trackingNo: shipTrackingNo.trim(),
       });
       setSuccessMessage(`申请单 #${result.applicationId} 快递发货成功。`);
       setShipApplicationId("");
+      setShipReceiverName("");
+      setShipReceiverPhone("");
+      setShipAddress("");
       setShipCarrier("");
       setShipTrackingNo("");
       await loadQueues();
@@ -420,12 +456,22 @@ export function OutboundPage(): JSX.Element {
                 {pickupQueue.map((item) => (
                   <li key={item.applicationId} className="dashboard-list__item">
                     <p className="dashboard-list__title">
-                      #{item.applicationId} · 申请人 {item.applicantName ?? `用户${item.applicantUserId}`}
+                      申请单号：{item.applicationId} · 申请人{" "}
+                      {item.applicantName ?? `用户${item.applicantUserId}`}
                     </p>
                     <p className="dashboard-list__meta">
                       状态：{toApplicationStatusLabel(item.status)} · {toDateLabel(item.createdAt)}
                     </p>
                     <p className="dashboard-list__content">申请条目：{formatItemSummary(item.items)}</p>
+                    <button
+                      className="app-shell__header-action"
+                      type="button"
+                      onClick={() => {
+                        setSelectedPickupApplicationId(item.applicationId);
+                      }}
+                    >
+                      选中
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -439,21 +485,17 @@ export function OutboundPage(): JSX.Element {
             </div>
             <div className="outbound-action-grid page-form-grid">
               <label className="store-field">
+                当前选中申请单号
+                <input
+                  value={selectedPickupApplicationId === null ? "" : String(selectedPickupApplicationId)}
+                  readOnly
+                  placeholder="未选中"
+                />
+              </label>
+              <label className="store-field">
                 核验类型
-                <select
-                  value={pickupVerifyType}
-                  onChange={(event) => {
-                    const next = event.target.value;
-                    setPickupVerifyType(
-                      next === "QR" || next === "CODE" || next === "APPLICATION_ID"
-                        ? next
-                        : "CODE",
-                    );
-                  }}
-                >
-                  <option value="APPLICATION_ID">{PICKUP_VERIFY_TYPE_LABELS.APPLICATION_ID}</option>
-                  <option value="CODE">{PICKUP_VERIFY_TYPE_LABELS.CODE}</option>
-                  <option value="QR">{PICKUP_VERIFY_TYPE_LABELS.QR}</option>
+                <select value={pickupVerifyType}>
+                  <option value="CODE">{PICKUP_VERIFY_TYPE_LABEL}</option>
                 </select>
               </label>
 
@@ -462,7 +504,7 @@ export function OutboundPage(): JSX.Element {
                 <input
                   value={pickupValue}
                   onChange={(event) => setPickupValue(event.target.value)}
-                  placeholder="申请单编号 / 取件码 / 二维码内容"
+                  placeholder="请输入取件码"
                 />
               </label>
 
@@ -497,7 +539,8 @@ export function OutboundPage(): JSX.Element {
                 {expressQueue.map((item) => (
                   <li key={item.applicationId} className="dashboard-list__item">
                     <p className="dashboard-list__title">
-                      #{item.applicationId} · 申请人 {item.applicantName ?? `用户${item.applicantUserId}`}
+                      申请单号：{item.applicationId} · 申请人{" "}
+                      {item.applicantName ?? `用户${item.applicantUserId}`}
                     </p>
                     <p className="dashboard-list__meta">
                       状态：{toApplicationStatusLabel(item.status)} · {toDateLabel(item.createdAt)}
@@ -506,9 +549,14 @@ export function OutboundPage(): JSX.Element {
                     <button
                       className="app-shell__header-action"
                       type="button"
-                      onClick={() => setShipApplicationId(String(item.applicationId))}
+                      onClick={() => {
+                        setShipApplicationId(String(item.applicationId));
+                        setShipReceiverName((item.receiverName ?? "").trim());
+                        setShipReceiverPhone((item.receiverPhone ?? "").trim());
+                        setShipAddress(composeExpressAddress(item));
+                      }}
                     >
-                      使用申请单编号
+                      选中
                     </button>
                   </li>
                 ))}
@@ -528,6 +576,33 @@ export function OutboundPage(): JSX.Element {
                   value={shipApplicationId}
                   onChange={(event) => setShipApplicationId(event.target.value)}
                   placeholder="例如：102"
+                />
+              </label>
+
+              <label className="store-field">
+                收件人姓名
+                <input
+                  value={shipReceiverName}
+                  onChange={(event) => setShipReceiverName(event.target.value)}
+                  placeholder="例如：张三"
+                />
+              </label>
+
+              <label className="store-field">
+                收件人电话
+                <input
+                  value={shipReceiverPhone}
+                  onChange={(event) => setShipReceiverPhone(event.target.value)}
+                  placeholder="例如：13800000000"
+                />
+              </label>
+
+              <label className="store-field">
+                收件地址
+                <input
+                  value={shipAddress}
+                  onChange={(event) => setShipAddress(event.target.value)}
+                  placeholder="例如：广东省深圳市南山区科技园 xx 路 xx 号"
                 />
               </label>
 

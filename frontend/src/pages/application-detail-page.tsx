@@ -64,6 +64,8 @@ export function ApplicationDetailPage(): JSX.Element {
       ),
     [detail, userRoles],
   );
+  const logisticsCarrier = (detail?.logistics?.carrier ?? "").trim();
+  const logisticsTrackingNo = (detail?.logistics?.trackingNo ?? "").trim();
 
   const loadDetail = useCallback(async (): Promise<void> => {
     if (!accessToken || !Number.isFinite(applicationId) || applicationId <= 0) {
@@ -176,14 +178,24 @@ export function ApplicationDetailPage(): JSX.Element {
                     <td>{toDeliveryTypeLabel(detail.application.deliveryType)}</td>
                   </tr>
                   {detail.application.deliveryType === "EXPRESS" ? (
-                    <tr>
-                      <th scope="row">地址详情</th>
-                      <td>
-                        {detail.application.expressAddressSnapshot
-                          ? `${detail.application.expressAddressSnapshot.province ?? ""}${detail.application.expressAddressSnapshot.city ?? ""}${detail.application.expressAddressSnapshot.district ?? ""}${detail.application.expressAddressSnapshot.detail ?? ""}`
-                          : "-"}
-                      </td>
-                    </tr>
+                    <>
+                      <tr>
+                        <th scope="row">承运商</th>
+                        <td>{logisticsCarrier || "-"}</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">快递单号</th>
+                        <td>{logisticsTrackingNo || "-"}</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">地址详情</th>
+                        <td>
+                          {detail.application.expressAddressSnapshot
+                            ? `${detail.application.expressAddressSnapshot.province ?? ""}${detail.application.expressAddressSnapshot.city ?? ""}${detail.application.expressAddressSnapshot.district ?? ""}${detail.application.expressAddressSnapshot.detail ?? ""}`
+                            : "-"}
+                        </td>
+                      </tr>
+                    </>
                   ) : null}
                   <tr>
                     <th scope="row">申请日期</th>
@@ -237,7 +249,7 @@ export function ApplicationDetailPage(): JSX.Element {
               <p className="app-shell__section-label">审批历史</p>
               <h3 className="app-shell__card-title">时间线</h3>
             </div>
-            {detail.approvalHistory.length === 0 ? (
+            {detail.approvalHistory.length === 0 && !detail.outboundTimeline ? (
               <p className="app-shell__card-copy">暂无审批记录。</p>
             ) : (
               <ul className="dashboard-list">
@@ -250,6 +262,15 @@ export function ApplicationDetailPage(): JSX.Element {
                     {item.comment ? <p className="dashboard-list__content">{item.comment}</p> : null}
                   </li>
                 ))}
+                {detail.outboundTimeline ? (
+                  <li key={`outbound-${detail.outboundTimeline.occurredAt}`} className="dashboard-list__item">
+                    <p className="dashboard-list__title">
+                      出库执行 - {detail.outboundTimeline.action === "SHIP" ? "已出库（快递发货）" : "已出库"} - 操作人{" "}
+                      {detail.outboundTimeline.operatorUserId}
+                    </p>
+                    <p className="dashboard-list__meta">{toDateLabel(detail.outboundTimeline.occurredAt)}</p>
+                  </li>
+                ) : null}
               </ul>
             )}
           </section>

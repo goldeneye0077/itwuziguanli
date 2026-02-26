@@ -406,6 +406,88 @@ def _serialize_queue_items(
     ]
 
 
+def _sanitize_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+EXPRESS_SNAPSHOT_KEY_ALIASES: dict[str, tuple[str, ...]] = {
+    "receiver_name": ("receiver_name", "receiverName"),
+    "receiver_phone": ("receiver_phone", "receiverPhone"),
+    "province": ("province",),
+    "city": ("city",),
+    "district": ("district",),
+    "detail": ("detail",),
+}
+
+
+def _read_express_snapshot_field(
+    application: Application, *, key: str
+) -> str | None:
+    snapshot = application.express_address_snapshot
+    if not isinstance(snapshot, dict):
+        return None
+    for alias in EXPRESS_SNAPSHOT_KEY_ALIASES.get(key, (key,)):
+        value = snapshot.get(alias)
+        if not isinstance(value, str):
+            continue
+        normalized = value.strip()
+        if normalized:
+            return normalized
+    return None
+
+
+def _resolve_express_queue_receiver_snapshot(
+    db: Session, *, application: Application
+) -> dict[str, str]:
+    keys = (
+        "receiver_name",
+        "receiver_phone",
+        "province",
+        "city",
+        "district",
+        "detail",
+    )
+    snapshot_values = {
+        key: _read_express_snapshot_field(application, key=key) for key in keys
+    }
+    if all(snapshot_values.values()):
+        return {
+            key: str(snapshot_values[key]) for key in keys
+        }
+
+    fallback_values = _resolve_receiver_snapshot(
+        db, applicant_user_id=application.applicant_user_id
+    )
+    return {
+        key: str(snapshot_values[key] or fallback_values[key]) for key in keys
+    }
+
+
+def _resolve_ship_receiver_snapshot(
+    *,
+    default_snapshot: dict[str, str],
+    payload: OutboundShipRequest,
+) -> dict[str, str]:
+    receiver_name = _sanitize_optional_text(payload.receiver_name)
+    receiver_phone = _sanitize_optional_text(payload.receiver_phone)
+    province = _sanitize_optional_text(payload.province)
+    city = _sanitize_optional_text(payload.city)
+    district = _sanitize_optional_text(payload.district)
+    detail = _sanitize_optional_text(payload.detail)
+
+    return {
+        "receiver_name": receiver_name or default_snapshot["receiver_name"],
+        "receiver_phone": receiver_phone or default_snapshot["receiver_phone"],
+        "province": province or default_snapshot["province"],
+        "city": city or default_snapshot["city"],
+        "district": district or default_snapshot["district"],
+        "detail": detail or default_snapshot["detail"],
+    }
+
+
 def _serialize_assets(assets: list[Asset]) -> list[dict[str, object]]:
     return [
         {
@@ -787,25 +869,37 @@ def list_express_queue(
         db, items_by_application=items_by_application
     )
 
+    queue_items: list[dict[str, object]] = []
+    for application in applications:
+        receiver_snapshot = _resolve_express_queue_receiver_snapshot(
+            db, application=application
+        )
+        queue_items.append(
+            {
+                "application_id": application.id,
+                "applicant_user_id": application.applicant_user_id,
+                "applicant_name": (
+                    application.applicant_name_snapshot
+                    or applicant_name_by_user_id.get(int(application.applicant_user_id))
+                ),
+                "status": application.status.value,
+                "created_at": _to_iso8601(application.created_at),
+                "items": _serialize_queue_items(
+                    items_by_application.get(application.id, []),
+                    sku_name_by_id=sku_name_by_id,
+                ),
+                "receiver_name": receiver_snapshot["receiver_name"],
+                "receiver_phone": receiver_snapshot["receiver_phone"],
+                "province": receiver_snapshot["province"],
+                "city": receiver_snapshot["city"],
+                "district": receiver_snapshot["district"],
+                "detail": receiver_snapshot["detail"],
+            }
+        )
+
     return build_success_response(
         {
-            "items": [
-                {
-                    "application_id": application.id,
-                    "applicant_user_id": application.applicant_user_id,
-                    "applicant_name": (
-                        application.applicant_name_snapshot
-                        or applicant_name_by_user_id.get(int(application.applicant_user_id))
-                    ),
-                    "status": application.status.value,
-                    "created_at": _to_iso8601(application.created_at),
-                    "items": _serialize_queue_items(
-                        items_by_application.get(application.id, []),
-                        sku_name_by_id=sku_name_by_id,
-                    ),
-                }
-                for application in applications
-            ],
+            "items": queue_items,
             "meta": {
                 "page": page,
                 "page_size": page_size,
@@ -911,9 +1005,13 @@ def ship_express_outbound(
     logistics = db.scalar(
         select(Logistics).where(Logistics.application_id == application.id).limit(1)
     )
-    receiver_snapshot = _resolve_receiver_snapshot(
+    default_receiver_snapshot = _resolve_receiver_snapshot(
         db,
         applicant_user_id=application.applicant_user_id,
+    )
+    receiver_snapshot = _resolve_ship_receiver_snapshot(
+        default_snapshot=default_receiver_snapshot,
+        payload=payload,
     )
     shipped_at = now
 

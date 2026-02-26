@@ -25,6 +25,8 @@ import {
 } from "../permissions";
 import type { AppRole } from "../routes/blueprint-routes";
 
+export * from "./theme-store";
+
 const SESSION_STORAGE_KEY = "pgc-auth-session-v1";
 
 interface StoredSession {

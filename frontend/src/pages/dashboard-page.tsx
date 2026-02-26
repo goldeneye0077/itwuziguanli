@@ -7,6 +7,7 @@ import {
   Box,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
 } from "lucide-react";
 
 import {
@@ -189,6 +190,15 @@ export function DashboardPage(): JSX.Element {
                 <div className="dashboard-action-info">
                   <h4>我要领用</h4>
                   <p>申请新资产</p>
+                </div>
+              </Link>
+              <Link to="/applications" className="dashboard-action-card action-purple">
+                <div className="dashboard-action-icon">
+                  <ClipboardList size={24} />
+                </div>
+                <div className="dashboard-action-info">
+                  <h4>我的申请</h4>
+                  <p>查看申请进度</p>
                 </div>
               </Link>
               <Link to="/assets/repair" className="dashboard-action-card action-red">

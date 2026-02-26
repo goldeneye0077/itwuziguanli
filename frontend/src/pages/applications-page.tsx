@@ -158,7 +158,7 @@ export function ApplicationsPage(): JSX.Element {
           <ul className="dashboard-list">
             {items.map((item) => (
               <li key={item.id} className="dashboard-list__item">
-                <p className="dashboard-list__title">{item.title}</p>
+                <p className="dashboard-list__title">{`\u7533\u8bf7\u5355\u53f7\uff1a${item.id} \u00b7 ${item.title}`}</p>
                 <p className="dashboard-list__meta">
                   {toDateLabel(item.createdAt)} - 状态：{toApplicationStatusLabel(item.status)} - 交付方式：
                   {toDeliveryTypeLabel(item.deliveryType)}
@@ -197,4 +197,3 @@ export function ApplicationsPage(): JSX.Element {
     </div>
   );
 }
-

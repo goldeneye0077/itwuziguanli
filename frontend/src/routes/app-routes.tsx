@@ -19,12 +19,14 @@ import {
   LayoutDashboard,
   LogOut,
   Megaphone,
+  Moon,
   Package,
   PieChart,
   RotateCcw,
   Shield,
   ShoppingBag,
   ShoppingCart,
+  Sun,
   Trash2,
   Warehouse,
   Wrench,
@@ -60,7 +62,7 @@ import {
   StoreCartPage,
   UnknownRouteState,
 } from "../pages";
-import { useAuthSession, type LoginInput } from "../stores";
+import { useAuthSession, useTheme, type LoginInput } from "../stores";
 import {
   BLUEPRINT_ROUTE_META,
   BLUEPRINT_ROUTE_META_BY_PATH,
@@ -225,6 +227,7 @@ function HeaderClock(): JSX.Element {
         month: "2-digit",
         day: "2-digit",
         weekday: "short",
+        timeZone: "Asia/Shanghai",
       }),
     [],
   );
@@ -235,6 +238,7 @@ function HeaderClock(): JSX.Element {
         minute: "2-digit",
         second: "2-digit",
         hour12: false,
+        timeZone: "Asia/Shanghai",
       }),
     [],
   );
@@ -310,6 +314,7 @@ function AppShellLayout({ children }: { readonly children: ReactNode }): JSX.Ele
   const location = useLocation();
   const navigate = useNavigate();
   const { state, userRoles, userPermissions, logout } = useAuthSession();
+  const { mode, toggleTheme } = useTheme();
 
   const visibleNavItems = useMemo(
     () =>
@@ -338,6 +343,15 @@ function AppShellLayout({ children }: { readonly children: ReactNode }): JSX.Ele
 
         <div className="app-shell__header-meta">
           <HeaderClock />
+          <button
+            className="app-shell__theme-btn"
+            type="button"
+            onClick={toggleTheme}
+            title={mode === "dark" ? "切换到亮色模式" : "切换到暗色模式"}
+          >
+            {mode === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            <span>{mode === "dark" ? "亮色" : "暗色"}</span>
+          </button>
           <div className="app-shell__user-info">
              <div className="app-shell__user-avatar">
                <span className="app-shell__user-icon">👤</span>

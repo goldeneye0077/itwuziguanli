@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import {
@@ -264,6 +264,7 @@ export function StoreCartPage(): JSX.Element {
       setSubmitMessage(`申请单 #${result.id} 提交成功，取件码：${result.pickupCode}`);
       clearCart();
       setAiPrecheck(null);
+      navigate("/applications");
     } catch (error) {
       if (
         error instanceof AuthApiError &&

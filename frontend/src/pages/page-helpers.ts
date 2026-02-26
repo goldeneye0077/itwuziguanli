@@ -1,17 +1,46 @@
 import { AuthApiError } from "../api";
 import type { AppRole } from "../routes/blueprint-routes";
 
+const SHANGHAI_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+});
+
 export function toDateLabel(isoDate: string | null | undefined, emptyLabel?: string): string {
   if (!isoDate) {
     return emptyLabel ?? "";
   }
 
-  const parsed = new Date(isoDate);
+  const normalized = normalizeIsoDate(isoDate);
+  const parsed = new Date(normalized);
   if (Number.isNaN(parsed.valueOf())) {
     return isoDate;
   }
 
-  return parsed.toLocaleString("zh-CN");
+  return SHANGHAI_DATE_TIME_FORMATTER.format(parsed);
+}
+
+function normalizeIsoDate(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return value;
+  }
+  if (/[zZ]|[+-]\d{2}:\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(trimmed)) {
+    return `${trimmed.replace(" ", "T")}Z`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(trimmed)) {
+    return `${trimmed}Z`;
+  }
+  return trimmed;
 }
 
 export function parsePositiveInteger(value: string): number | null {

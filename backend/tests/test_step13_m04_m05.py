@@ -513,9 +513,23 @@ def test_m05_outbound_pickup_and_ship_transitions() -> None:
             headers=headers,
             json={
                 "application_id": 202,
+                "receiver_name": "运维小组",
+                "receiver_phone": "13900000000",
+                "province": "广东省",
+                "city": "深圳市",
+                "district": "南山区",
+                "detail": "科技园 1 号楼 8F",
                 "carrier": "SF",
                 "tracking_no": "SF1234567890",
             },
+        )
+        detail_pickup_outbounded = client.get(
+            "/api/v1/applications/201",
+            headers=headers,
+        )
+        detail_express_shipped = client.get(
+            "/api/v1/applications/202",
+            headers=headers,
         )
 
     assert pickup_queue.status_code == 200
@@ -537,6 +551,15 @@ def test_m05_outbound_pickup_and_ship_transitions() -> None:
         for item in express_payload["data"]["items"]
     }
     assert express_items == {202: "READY_OUTBOUND", 206: "ADMIN_APPROVED"}
+    express_item_by_id = {
+        item["application_id"]: item for item in express_payload["data"]["items"]
+    }
+    assert express_item_by_id[202]["receiver_name"] == "Alice"
+    assert express_item_by_id[202]["receiver_phone"] == "13800000000"
+    assert express_item_by_id[202]["detail"] == "No.1 Road"
+    assert express_item_by_id[206]["receiver_name"] == "Alice"
+    assert express_item_by_id[206]["receiver_phone"] == "13800000000"
+    assert express_item_by_id[206]["detail"] == "No.1 Road"
 
     assert confirm_pickup_blocked.status_code == 200
     confirm_pickup_blocked_payload = confirm_pickup_blocked.json()
@@ -558,6 +581,20 @@ def test_m05_outbound_pickup_and_ship_transitions() -> None:
     assert ship_payload["data"]["status"] == "SHIPPED"
     assert any(item["asset_id"] == 12 for item in ship_payload["data"]["delivered_assets"])
     assert ship_payload["data"]["delivered_items"] == [{"sku_id": 2, "quantity": 1}]
+
+    assert detail_pickup_outbounded.status_code == 200
+    detail_pickup_payload = detail_pickup_outbounded.json()
+    assert detail_pickup_payload["success"] is True
+    assert detail_pickup_payload["data"]["outbound_timeline"]["action"] == "OUTBOUND"
+    assert detail_pickup_payload["data"]["outbound_timeline"]["operator_user_id"] == 2
+    assert detail_pickup_payload["data"]["outbound_timeline"]["occurred_at"]
+
+    assert detail_express_shipped.status_code == 200
+    detail_express_payload = detail_express_shipped.json()
+    assert detail_express_payload["success"] is True
+    assert detail_express_payload["data"]["outbound_timeline"]["action"] == "SHIP"
+    assert detail_express_payload["data"]["outbound_timeline"]["operator_user_id"] == 2
+    assert detail_express_payload["data"]["outbound_timeline"]["occurred_at"]
 
     with session_factory() as session:
         app201 = session.get(Application, 201)
@@ -595,7 +632,12 @@ def test_m05_outbound_pickup_and_ship_transitions() -> None:
             select(Logistics).where(Logistics.application_id == 202).limit(1)
         )
         assert logistics is not None
-        assert logistics.receiver_name == "Alice"
+        assert logistics.receiver_name == "运维小组"
+        assert logistics.receiver_phone == "13900000000"
+        assert logistics.province == "广东省"
+        assert logistics.city == "深圳市"
+        assert logistics.district == "南山区"
+        assert logistics.detail == "科技园 1 号楼 8F"
         assert logistics.carrier == "SF"
         assert logistics.tracking_no == "SF1234567890"
 

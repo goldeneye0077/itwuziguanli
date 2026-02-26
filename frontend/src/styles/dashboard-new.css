@@ -145,6 +145,11 @@
   box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
 }
 
+.action-purple .dashboard-action-icon {
+  background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+}
+
 /* Pagination */
 .dashboard-pagination {
   display: flex;

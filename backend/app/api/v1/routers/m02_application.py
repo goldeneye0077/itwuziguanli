@@ -1,4 +1,4 @@
-﻿"""M02 router implementation: asset application."""
+"""M02 router implementation: asset application."""
 
 from __future__ import annotations
 
@@ -366,7 +366,7 @@ def list_my_applications(
 
     total = int(db.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
     rows = db.scalars(
-        stmt.order_by(Application.created_at.desc(), Application.id.desc())
+        stmt.order_by(Application.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
@@ -634,4 +634,3 @@ def ai_precheck(
             "reason": reason,
         }
     )
-

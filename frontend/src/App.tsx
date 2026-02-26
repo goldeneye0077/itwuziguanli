@@ -1,15 +1,17 @@
 import { BrowserRouter } from "react-router-dom";
 
 import { AppRoutes } from "./routes";
-import { AuthSessionProvider } from "./stores";
+import { AuthSessionProvider, ThemeProvider } from "./stores";
 
 function App() {
   return (
-    <AuthSessionProvider>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
-    </AuthSessionProvider>
+    <ThemeProvider>
+      <AuthSessionProvider>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </AuthSessionProvider>
+    </ThemeProvider>
   );
 }
 
