@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import {
   AuthApiError,
@@ -26,6 +27,8 @@ function toMaterialName(
   return value.length > 0 ? value : `SKU-${skuId}`;
 }
 
+const APPLICATIONS_PAGE_SIZE = 10;
+
 export function ApplicationsPage(): JSX.Element {
   const navigate = useNavigate();
   const { state } = useAuthSession();
@@ -34,9 +37,15 @@ export function ApplicationsPage(): JSX.Element {
   const { replaceCartItems } = useM02Cart(currentUserId);
 
   const [items, setItems] = useState<MyApplicationSummary[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isRollingBackAppId, setIsRollingBackAppId] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const totalPages = useMemo(() => {
+    return Math.max(1, Math.ceil(total / APPLICATIONS_PAGE_SIZE));
+  }, [total]);
 
   const loadApplications = useCallback(async (): Promise<void> => {
     if (!accessToken) {
@@ -48,18 +57,28 @@ export function ApplicationsPage(): JSX.Element {
     setIsLoading(true);
     setErrorMessage(null);
     try {
-      const result = await fetchMyApplications(accessToken, { page: 1, pageSize: 50 });
+      const result = await fetchMyApplications(accessToken, {
+        page,
+        pageSize: APPLICATIONS_PAGE_SIZE,
+      });
       setItems(result.items);
+      setTotal(result.meta.total);
     } catch (error) {
       setErrorMessage(error instanceof AuthApiError ? error.message : "加载我的申请失败。");
     } finally {
       setIsLoading(false);
     }
-  }, [accessToken]);
+  }, [accessToken, page]);
 
   useEffect(() => {
     void loadApplications();
   }, [loadApplications]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   async function rollbackToCart(applicationId: number): Promise<void> {
     if (!accessToken) {
@@ -193,6 +212,32 @@ export function ApplicationsPage(): JSX.Element {
             ))}
           </ul>
         )}
+
+        {!isLoading && !errorMessage && totalPages > 1 ? (
+          <nav className="dashboard-pagination" aria-label="我的申请分页">
+            <button
+              className="dashboard-pagination__btn"
+              type="button"
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={page <= 1}
+            >
+              <ChevronLeft size={16} />
+              上一页
+            </button>
+            <span className="dashboard-pagination__label">
+              第 {page} / {totalPages} 页
+            </span>
+            <button
+              className="dashboard-pagination__btn"
+              type="button"
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              disabled={page >= totalPages}
+            >
+              下一页
+              <ChevronRight size={16} />
+            </button>
+          </nav>
+        ) : null}
       </section>
     </div>
   );

@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import type { AppRole } from "../routes/blueprint-routes";
+import type { AppRole } from "../routes/blueprint-routes";
 
 const API_PREFIX = "/api/v1";
 
