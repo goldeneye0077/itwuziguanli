@@ -12,8 +12,8 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from app.db.base import Base  # noqa: E402
-import app.models  # noqa: F401,E402
+from app.db.base import Base
+import app.models
 
 config = context.config
 
@@ -58,7 +58,6 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
-            # PostgreSQL: 禁用 batch 模式以支持事务
             render_as_batch=False,
         )
 

@@ -1,0 +1,37 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Node
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Build
+dist
+build
+
+# Tests
+coverage
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
+
+# Docs
+README.md
+CHANGELOG.md
+LICENSE
+
+# Misc
+.DS_Store
+Thumbs.db
+*.env.local
+.env.development
+.env.test

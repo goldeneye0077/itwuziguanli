@@ -4161,6 +4161,25 @@ interface ApplicationsTrendPointResponseBody {
   readonly count: number;
 }
 
+// 新的多维度趋势报表类型
+interface ApplicationsTrendByDepartmentResponseBody {
+  readonly buckets: string[];
+  readonly departments: Array<{ readonly id: number; readonly name: string }>;
+  readonly data: Array<Record<string, number>>;
+}
+
+interface ApplicationsTrendByCategoryResponseBody {
+  readonly buckets: string[];
+  readonly categories: Array<{ readonly id: number; readonly name: string }>;
+  readonly data: Array<Record<string, number>>;
+}
+
+interface ApplicationsTrendBySkuResponseBody {
+  readonly buckets: string[];
+  readonly skus: Array<{ readonly id: number; readonly name: string }>;
+  readonly data: Array<Record<string, number>>;
+}
+
 interface CostByDepartmentRowResponseBody {
   readonly department_id: number;
   readonly department_name: string;
@@ -4340,6 +4359,79 @@ export async function fetchAssetStatusDistributionReport(
   }));
 }
 
+// 多维度趋势报表 API
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchApplicationsTrendByDepartment(
+  accessToken: string,
+  options?: {
+    readonly granularity?: ReportGranularity;
+    readonly startDate?: string;
+    readonly endDate?: string;
+  },
+): Promise<any> {
+  assertToken(accessToken);
+  const searchParams = new URLSearchParams();
+  if (options?.granularity) searchParams.set("granularity", options.granularity);
+  if (options?.startDate) searchParams.set("start_date", options.startDate);
+  if (options?.endDate) searchParams.set("end_date", options.endDate);
+
+  const query = searchParams.toString();
+  const path = query ? `/reports/applications-trend-by-department?${query}` : "/reports/applications-trend-by-department";
+  const envelope = await requestApi<any>(path, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return envelope.data ?? { buckets: [], departments: [], data: [] };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchApplicationsTrendByCategory(
+  accessToken: string,
+  options?: {
+    readonly granularity?: ReportGranularity;
+    readonly startDate?: string;
+    readonly endDate?: string;
+  },
+): Promise<any> {
+  assertToken(accessToken);
+  const searchParams = new URLSearchParams();
+  if (options?.granularity) searchParams.set("granularity", options.granularity);
+  if (options?.startDate) searchParams.set("start_date", options.startDate);
+  if (options?.endDate) searchParams.set("end_date", options.endDate);
+
+  const query = searchParams.toString();
+  const path = query ? `/reports/applications-trend-by-category?${query}` : "/reports/applications-trend-by-category";
+  const envelope = await requestApi<any>(path, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return envelope.data ?? { buckets: [], categories: [], data: [] };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchApplicationsTrendBySku(
+  accessToken: string,
+  options?: {
+    readonly granularity?: ReportGranularity;
+    readonly startDate?: string;
+    readonly endDate?: string;
+  },
+): Promise<any> {
+  assertToken(accessToken);
+  const searchParams = new URLSearchParams();
+  if (options?.granularity) searchParams.set("granularity", options.granularity);
+  if (options?.startDate) searchParams.set("start_date", options.startDate);
+  if (options?.endDate) searchParams.set("end_date", options.endDate);
+
+  const query = searchParams.toString();
+  const path = query ? `/reports/applications-trend-by-sku?${query}` : "/reports/applications-trend-by-sku";
+  const envelope = await requestApi<any>(path, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return envelope.data ?? { buckets: [], skus: [], data: [] };
+}
+
 export async function queryCopilot(
   accessToken: string,
   input: CopilotQueryInput,
@@ -4379,6 +4471,136 @@ export async function queryCopilot(
     columns: envelope.data.columns,
     rows: envelope.data.rows,
   };
+}
+
+// ============================================================
+// Top 10 报表类型
+// ============================================================
+
+export interface TopSkuRow {
+  readonly skuId: number;
+  readonly skuName: string;
+  readonly totalQuantity: number;
+  readonly applicationCount: number;
+}
+
+export interface TopSkuResponseRow {
+  readonly sku_id: number;
+  readonly sku_name: string;
+  readonly total_quantity: number;
+  readonly application_count: number;
+}
+
+export interface TopDepartmentRow {
+  readonly departmentId: number;
+  readonly departmentName: string;
+  readonly totalQuantity: number;
+  readonly topSkus: ReadonlyArray<{
+    readonly skuId: number;
+    readonly skuName: string;
+    readonly totalQuantity: number;
+  }>;
+}
+
+export interface TopDepartmentResponseRow {
+  readonly department_id: number;
+  readonly department_name: string;
+  readonly total_quantity: number;
+  readonly top_skus: ReadonlyArray<{
+    readonly sku_id: number;
+    readonly sku_name: string;
+    readonly total_quantity: number;
+  }>;
+}
+
+// ============================================================
+// Top 10 报表 API
+// ============================================================
+
+export async function fetchTopSkusByApplications(
+  accessToken: string,
+  options?: {
+    readonly startDate?: string;
+    readonly endDate?: string;
+    readonly limit?: number;
+  },
+): Promise<TopSkuRow[]> {
+  assertToken(accessToken);
+  const searchParams = new URLSearchParams();
+  if (options?.startDate) {
+    searchParams.set("start_date", options.startDate);
+  }
+  if (options?.endDate) {
+    searchParams.set("end_date", options.endDate);
+  }
+  if (options?.limit) {
+    searchParams.set("limit", String(options.limit));
+  }
+
+  const query = searchParams.toString();
+  const path = query
+    ? `/reports/top-skus-by-applications?${query}`
+    : "/reports/top-skus-by-applications";
+  const envelope = await requestApi<TopSkuResponseRow[]>(path, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  return (envelope.data ?? []).map((item) => ({
+    skuId: item.sku_id,
+    skuName: item.sku_name,
+    totalQuantity: item.total_quantity,
+    applicationCount: item.application_count,
+  }));
+}
+
+export async function fetchTopDepartmentsWithTopSkus(
+  accessToken: string,
+  options?: {
+    readonly startDate?: string;
+    readonly endDate?: string;
+    readonly topDepartments?: number;
+    readonly topSkusPerDept?: number;
+  },
+): Promise<TopDepartmentRow[]> {
+  assertToken(accessToken);
+  const searchParams = new URLSearchParams();
+  if (options?.startDate) {
+    searchParams.set("start_date", options.startDate);
+  }
+  if (options?.endDate) {
+    searchParams.set("end_date", options.endDate);
+  }
+  if (options?.topDepartments) {
+    searchParams.set("top_departments", String(options.topDepartments));
+  }
+  if (options?.topSkusPerDept) {
+    searchParams.set("top_skus_per_dept", String(options.topSkusPerDept));
+  }
+
+  const query = searchParams.toString();
+  const path = query
+    ? `/reports/top-departments-with-top-skus?${query}`
+    : "/reports/top-departments-with-top-skus";
+  const envelope = await requestApi<TopDepartmentResponseRow[]>(path, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  return (envelope.data ?? []).map((item) => ({
+    departmentId: item.department_id,
+    departmentName: item.department_name,
+    totalQuantity: item.total_quantity,
+    topSkus: item.top_skus.map((sku) => ({
+      skuId: sku.sku_id,
+      skuName: sku.sku_name,
+      totalQuantity: sku.total_quantity,
+    })),
+  }));
 }
 
 

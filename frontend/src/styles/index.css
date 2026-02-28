@@ -1563,6 +1563,13 @@ select {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.analytics-chart-container {
+  margin: var(--space-md) 0;
+  padding: var(--space-sm);
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-md);
+}
+
 .analytics-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }

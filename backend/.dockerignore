@@ -1,0 +1,42 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.egg-info
+.eggs
+dist
+build
+*.egg
+
+# Virtual environments
+venv
+.venv
+env/
+
+# Tests
+.pytest_cache
+.coverage
+htmlcov
+
+# IDE
+.idea
+.vscode
+*.swp
+
+# Docs
+README.md
+CHANGELOG.md
+
+# Misc
+.env
+.env.local
+.env.example
+.DS_Store
+*.db
+*.sqlite
+step06_verify.db
+uploads/

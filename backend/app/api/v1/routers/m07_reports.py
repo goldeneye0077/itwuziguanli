@@ -119,6 +119,212 @@ def get_applications_trend(
     return build_success_response(data)
 
 
+@router.get("/reports/applications-trend-by-department", response_model=ApiResponse)
+def get_applications_trend_by_department(
+    granularity: ReportGranularity = Query(default="DAY"),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    context: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db_session),
+) -> ApiResponse:
+    """按部门统计申请趋势"""
+    _require_admin(context)
+    start_at, end_at = _resolve_datetime_window(start_date, end_date)
+
+    stmt = (
+        select(
+            Application.created_at,
+            Department.id,
+            Department.name,
+        )
+        .join(SysUser, Application.applicant_user_id == SysUser.id)
+        .join(Department, SysUser.department_id == Department.id, isouter=True)
+    )
+    if start_at is not None:
+        stmt = stmt.where(Application.created_at >= start_at)
+    if end_at is not None:
+        stmt = stmt.where(Application.created_at < end_at)
+
+    rows = db.execute(stmt.order_by(Application.created_at.asc())).all()
+
+    # 按时间和部门聚合
+    data_dict: dict[str, dict[str, int]] = {}
+    dept_names: dict[int, str] = {}
+    for row in rows:
+        created_at = row[0]
+        dept_id = row[1]
+        dept_name = row[2] or "未知部门"
+        bucket = _bucket_from_datetime(created_at, granularity)
+
+        if bucket not in data_dict:
+            data_dict[bucket] = {}
+        if dept_id not in data_dict[bucket]:
+            data_dict[bucket][dept_id] = 0
+        data_dict[bucket][dept_id] += 1
+        dept_names[dept_id] = dept_name
+
+    # 转换为前端需要的格式
+    buckets = sorted(data_dict.keys())
+    all_dept_ids = set()
+    for bucket_data in data_dict.values():
+        all_dept_ids.update(bucket_data.keys())
+
+    data = []
+    for bucket in buckets:
+        entry: dict[str, Any] = {"bucket": bucket}
+        for dept_id in all_dept_ids:
+            dept_name = dept_names.get(dept_id, f"部门{dept_id}")
+            entry[dept_name] = data_dict[bucket].get(dept_id, 0)
+        data.append(entry)
+
+    return build_success_response({
+        "buckets": buckets,
+        "departments": [{"id": k, "name": v} for k, v in dept_names.items()],
+        "data": data,
+    })
+
+
+@router.get("/reports/applications-trend-by-category", response_model=ApiResponse)
+def get_applications_trend_by_category(
+    granularity: ReportGranularity = Query(default="DAY"),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    context: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db_session),
+) -> ApiResponse:
+    """按物料分类统计申请趋势"""
+    _require_admin(context)
+    start_at, end_at = _resolve_datetime_window(start_date, end_date)
+
+    stmt = (
+        select(
+            Application.created_at,
+            Category.id,
+            Category.name,
+        )
+        .join(ApplicationItem, ApplicationItem.application_id == Application.id)
+        .join(Sku, Sku.id == ApplicationItem.sku_id)
+        .join(Category, Category.id == Sku.category_id, isouter=True)
+    )
+    if start_at is not None:
+        stmt = stmt.where(Application.created_at >= start_at)
+    if end_at is not None:
+        stmt = stmt.where(Application.created_at < end_at)
+
+    rows = db.execute(stmt.order_by(Application.created_at.asc())).all()
+
+    # 按时间和分类聚合
+    data_dict: dict[str, dict[int, int]] = {}
+    cat_names: dict[int, str] = {}
+    for row in rows:
+        created_at = row[0]
+        cat_id = row[1]
+        cat_name = row[2] or "未知分类"
+        bucket = _bucket_from_datetime(created_at, granularity)
+
+        if bucket not in data_dict:
+            data_dict[bucket] = {}
+        if cat_id not in data_dict[bucket]:
+            data_dict[bucket][cat_id] = 0
+        data_dict[bucket][cat_id] += 1
+        cat_names[cat_id] = cat_name
+
+    buckets = sorted(data_dict.keys())
+    all_cat_ids = set()
+    for bucket_data in data_dict.values():
+        all_cat_ids.update(bucket_data.keys())
+
+    data = []
+    for bucket in buckets:
+        entry: dict[str, Any] = {"bucket": bucket}
+        for cat_id in all_cat_ids:
+            cat_name = cat_names.get(cat_id, f"分类{cat_id}")
+            entry[cat_name] = data_dict[bucket].get(cat_id, 0)
+        data.append(entry)
+
+    return build_success_response({
+        "buckets": buckets,
+        "categories": [{"id": k, "name": v} for k, v in cat_names.items()],
+        "data": data,
+    })
+
+
+@router.get("/reports/applications-trend-by-sku", response_model=ApiResponse)
+def get_applications_trend_by_sku(
+    granularity: ReportGranularity = Query(default="DAY"),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    context: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db_session),
+) -> ApiResponse:
+    """按物料统计申请趋势（显示数量）"""
+    _require_admin(context)
+    start_at, end_at = _resolve_datetime_window(start_date, end_date)
+
+    stmt = (
+        select(
+            Application.created_at,
+            Sku.id,
+            Sku.brand,
+            Sku.model,
+            ApplicationItem.quantity,
+        )
+        .join(ApplicationItem, ApplicationItem.application_id == Application.id)
+        .join(Sku, Sku.id == ApplicationItem.sku_id)
+    )
+    if start_at is not None:
+        stmt = stmt.where(Application.created_at >= start_at)
+    if end_at is not None:
+        stmt = stmt.where(Application.created_at < end_at)
+
+    rows = db.execute(stmt.order_by(Application.created_at.asc())).all()
+
+    # 按时间和物料聚合（数量求和）
+    data_dict: dict[str, dict[int, int]] = {}
+    sku_names: dict[int, str] = {}
+    for row in rows:
+        created_at = row[0]
+        sku_id = row[1]
+        brand = row[2] or ""
+        model = row[3] or ""
+        quantity = int(row[4] or 0)
+        bucket = _bucket_from_datetime(created_at, granularity)
+        sku_label = f"{brand} {model}".strip() or f"物料{sku_id}"
+
+        if bucket not in data_dict:
+            data_dict[bucket] = {}
+        if sku_id not in data_dict[bucket]:
+            data_dict[bucket][sku_id] = 0
+        data_dict[bucket][sku_id] += quantity
+        sku_names[sku_id] = sku_label
+
+    buckets = sorted(data_dict.keys())
+    all_sku_ids = set()
+    for bucket_data in data_dict.values():
+        all_sku_ids.update(bucket_data.keys())
+
+    # 限制显示前 10 个物料
+    top_skus = sorted(
+        all_sku_ids,
+        key=lambda sid: sum(data_dict[b].get(sid, 0) for b in buckets),
+        reverse=True,
+    )[:10]
+
+    data = []
+    for bucket in buckets:
+        entry: dict[str, Any] = {"bucket": bucket}
+        for sku_id in top_skus:
+            sku_name = sku_names.get(sku_id, f"物料{sku_id}")
+            entry[sku_name] = data_dict[bucket].get(sku_id, 0)
+        data.append(entry)
+
+    return build_success_response({
+        "buckets": buckets,
+        "skus": [{"id": k, "name": v} for k, v in sku_names.items() if k in top_skus],
+        "data": data,
+    })
+
+
 @router.get("/reports/cost-by-department", response_model=ApiResponse)
 def get_cost_by_department(
     start_date: date | None = Query(default=None),
@@ -897,3 +1103,167 @@ def plan_copilot(
             "query_plan": plan.model_dump(),
         }
     )
+
+
+# ============================================================
+# Top 10 报表端点
+# ============================================================
+
+
+@router.get("/reports/top-skus-by-applications", response_model=ApiResponse)
+def get_top_skus_by_applications(
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    limit: int = Query(default=10, ge=1, le=50),
+    context: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db_session),
+) -> ApiResponse:
+    """获取申请次数最多的前 N 名物料"""
+    _require_admin(context)
+    start_at, end_at = _resolve_datetime_window(start_date, end_date)
+
+    # 按物料统计申请次数（quantity 求和）
+    stmt = (
+        select(
+            Sku.id,
+            Sku.brand,
+            Sku.model,
+            Sku.name,
+            func.sum(ApplicationItem.quantity).label("total_quantity"),
+            func.count(ApplicationItem.id).label("application_count"),
+        )
+        .join(ApplicationItem, ApplicationItem.sku_id == Sku.id)
+        .join(Application, Application.id == ApplicationItem.application_id)
+    )
+    if start_at is not None:
+        stmt = stmt.where(Application.created_at >= start_at)
+    if end_at is not None:
+        stmt = stmt.where(Application.created_at < end_at)
+
+    stmt = (
+        stmt.group_by(Sku.id, Sku.brand, Sku.model, Sku.name)
+        .order_by(func.sum(ApplicationItem.quantity).desc(), Sku.id.asc())
+        .limit(limit)
+    )
+
+    rows = db.execute(stmt).all()
+    data = [
+        {
+            "sku_id": int(sku_id),
+            "sku_name": f"{brand or ''} {model or ''} {name or ''}".strip() or f"物料{sku_id}",
+            "total_quantity": int(total_quantity or 0),
+            "application_count": int(application_count),
+        }
+        for sku_id, brand, model, name, total_quantity, application_count in rows
+    ]
+    return build_success_response(data)
+
+
+@router.get("/reports/top-departments-with-top-skus", response_model=ApiResponse)
+def get_top_departments_with_top_skus(
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    top_departments: int = Query(default=10, ge=1, le=50),
+    top_skus_per_dept: int = Query(default=3, ge=1, le=10),
+    context: AuthContext = Depends(get_auth_context),
+    db: Session = Depends(get_db_session),
+) -> ApiResponse:
+    """获取申请次数最多的前 N 个部门，以及每个部门申请最多的物料前三"""
+    _require_admin(context)
+    start_at, end_at = _resolve_datetime_window(start_date, end_date)
+
+    # 子查询：获取每个部门的总申请次数
+    dept_app_count = (
+        select(
+            Department.id.label("dept_id"),
+            func.sum(ApplicationItem.quantity).label("total_quantity"),
+        )
+        .join(SysUser, SysUser.department_id == Department.id)
+        .join(Application, Application.applicant_user_id == SysUser.id)
+        .join(ApplicationItem, ApplicationItem.application_id == Application.id)
+        .group_by(Department.id)
+    )
+    if start_at is not None:
+        dept_app_count = dept_app_count.where(Application.created_at >= start_at)
+    if end_at is not None:
+        dept_app_count = dept_app_count.where(Application.created_at < end_at)
+
+    # 获取申请次数最多的前 N 个部门
+    top_dept_stmt = (
+        select(
+            Department.id,
+            Department.name,
+            func.sum(ApplicationItem.quantity).label("total_quantity"),
+        )
+        .join(SysUser, SysUser.department_id == Department.id)
+        .join(Application, Application.applicant_user_id == SysUser.id)
+        .join(ApplicationItem, ApplicationItem.application_id == Application.id)
+    )
+    if start_at is not None:
+        top_dept_stmt = top_dept_stmt.where(Application.created_at >= start_at)
+    if end_at is not None:
+        top_dept_stmt = top_dept_stmt.where(Application.created_at < end_at)
+
+    top_dept_stmt = (
+        top_dept_stmt.group_by(Department.id, Department.name)
+        .order_by(func.sum(ApplicationItem.quantity).desc(), Department.id.asc())
+        .limit(top_departments)
+    )
+
+    top_depts = db.execute(top_dept_stmt).all()
+    dept_ids = [int(row[0]) for row in top_depts]
+
+    # 获取每个部门申请最多的物料前三
+    sku_data_by_dept: dict[int, list[dict]] = {}
+
+    for dept_id in dept_ids:
+        sku_stmt = (
+            select(
+                Sku.id,
+                Sku.brand,
+                Sku.model,
+                Sku.name,
+                func.sum(ApplicationItem.quantity).label("total_quantity"),
+            )
+            .join(ApplicationItem, ApplicationItem.sku_id == Sku.id)
+            .join(Application, Application.id == ApplicationItem.application_id)
+            .join(SysUser, Application.applicant_user_id == SysUser.id)
+        )
+        if start_at is not None:
+            sku_stmt = sku_stmt.where(Application.created_at >= start_at)
+        if end_at is not None:
+            sku_stmt = sku_stmt.where(Application.created_at < end_at)
+
+        sku_stmt = (
+            sku_stmt.where(SysUser.department_id == dept_id)
+            .group_by(Sku.id, Sku.brand, Sku.model, Sku.name)
+            .order_by(func.sum(ApplicationItem.quantity).desc(), Sku.id.asc())
+            .limit(top_skus_per_dept)
+        )
+
+        sku_rows = db.execute(sku_stmt).all()
+        sku_data_by_dept[dept_id] = [
+            {
+                "sku_id": int(sku_id),
+                "sku_name": f"{brand or ''} {model or ''} {name or ''}".strip()
+                or f"物料{sku_id}",
+                "total_quantity": int(total_quantity or 0),
+            }
+            for sku_id, brand, model, name, total_quantity in sku_rows
+        ]
+
+    data = []
+    for row in top_depts:
+        dept_id = int(row[0])
+        dept_name = row[1]
+        total_quantity = int(row[2] or 0)
+        data.append(
+            {
+                "department_id": dept_id,
+                "department_name": dept_name,
+                "total_quantity": total_quantity,
+                "top_skus": sku_data_by_dept.get(dept_id, []),
+            }
+        )
+
+    return build_success_response(data)

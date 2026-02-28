@@ -14,38 +14,21 @@ WORKDIR /app
 # 先复制依赖文件，利用 Docker 层缓存
 COPY pyproject.toml ./
 
-# 安装 Python 依赖（使用 pip cache）
+# 安装 Python 依赖
 RUN pip install --no-cache-dir --upgrade pip wheel \
-    && pip install --no-cache-dir \
-        "fastapi>=0.116.0" \
-        "uvicorn[standard]>=0.35.0" \
-        "sqlalchemy>=2.0.37" \
-        "alembic>=1.14.0" \
-        "celery>=5.4.0" \
-        "redis>=5.0.0" \
-        "pymysql>=1.1.0" \
-        "psycopg2-binary>=2.9.9" \
-        "cryptography>=43.0.0" \
-        "python-multipart>=0.0.9" \
-        "httpx>=0.27.0" \
-        "boto3>=1.35.0" \
-        "python-jose[cryptography]>=3.3.0" \
-        "passlib[bcrypt]>=1.7.4" \
-        "python-dateutil>=2.9.0"
+    && pip install --no-cache-dir .
 
 # ============================================================
 # 阶段 2: 运行镜像
 # ============================================================
 FROM python:3.12-slim AS runner
 
-# 安装运行时依赖（仅保留必要的系统库）
+# 安装运行时依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/* \
-    # 创建非 root 用户提升安全性
-    && useradd --create-home --shell /bin/bash appuser \
-    && mkdir -p /app/uploads \
-    && chown -R appuser:appuser /app
+    # 创建非 root 用户
+    && useradd --create-home --shell /bin/bash appuser
 
 WORKDIR /app
 

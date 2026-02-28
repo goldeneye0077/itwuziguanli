@@ -1,15 +1,34 @@
 ﻿import { useState } from "react";
 
 import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
   fetchApplicationsTrendReport,
   fetchAssetStatusDistributionReport,
   fetchCostByDepartmentReport,
+  fetchTopDepartmentsWithTopSkus,
+  fetchTopSkusByApplications,
   queryCopilot,
   type ApplicationsTrendPoint,
   type AssetStatusDistributionRow,
   type CopilotQueryResult,
   type CostByDepartmentRow,
   type ReportGranularity,
+  type TopDepartmentRow,
+  type TopSkuRow,
 } from "../api";
 import { hasActionPermission } from "../permissions";
 import { useAuthSession } from "../stores";
@@ -120,6 +139,8 @@ export function AnalyticsPage({ routePath }: AnalyticsPageProps): JSX.Element {
   const [trendRows, setTrendRows] = useState<ApplicationsTrendPoint[]>([]);
   const [costRows, setCostRows] = useState<CostByDepartmentRow[]>([]);
   const [statusRows, setStatusRows] = useState<AssetStatusDistributionRow[]>([]);
+  const [topSkuRows, setTopSkuRows] = useState<TopSkuRow[]>([]);
+  const [topDeptRows, setTopDeptRows] = useState<TopDepartmentRow[]>([]);
   const [isLoadingReports, setIsLoadingReports] = useState(false);
 
   const [copilotQuestion, setCopilotQuestion] = useState("按部门统计总成本");
@@ -170,20 +191,33 @@ export function AnalyticsPage({ routePath }: AnalyticsPageProps): JSX.Element {
         startDate: startDate.trim() || undefined,
         endDate: endDate.trim() || undefined,
       };
-      const [trend, cost, status] = await Promise.all([
+      const [trend, cost, status, topSkus, topDepts] = await Promise.all([
         fetchApplicationsTrendReport(token, reportOptions),
         fetchCostByDepartmentReport(token, {
           startDate: reportOptions.startDate,
           endDate: reportOptions.endDate,
         }),
         fetchAssetStatusDistributionReport(token),
+        fetchTopSkusByApplications(token, {
+          startDate: reportOptions.startDate,
+          endDate: reportOptions.endDate,
+          limit: 10,
+        }),
+        fetchTopDepartmentsWithTopSkus(token, {
+          startDate: reportOptions.startDate,
+          endDate: reportOptions.endDate,
+          topDepartments: 10,
+          topSkusPerDept: 3,
+        }),
       ]);
 
       setTrendRows(trend);
       setCostRows(cost);
       setStatusRows(status);
+      setTopSkuRows(topSkus);
+      setTopDeptRows(topDepts);
       setSuccessMessage(
-        `报表加载完成：趋势 ${trend.length} 条、部门成本 ${cost.length} 条、资产状态 ${status.length} 条。`,
+        `报表加载完成：趋势 ${trend.length} 条、部门成本 ${cost.length} 条、资产状态 ${status.length} 条、物料 Top10 ${topSkus.length} 条、部门 Top10 ${topDepts.length} 条。`,
       );
     } catch (error) {
       setErrorMessage(toErrorMessage(error, "加载分析报表失败。"));
@@ -244,7 +278,13 @@ export function AnalyticsPage({ routePath }: AnalyticsPageProps): JSX.Element {
       setErrorMessage("当前账号缺少报表导出权限。");
       return;
     }
-    if (!trendRows.length && !costRows.length && !statusRows.length) {
+    if (
+      !trendRows.length &&
+      !costRows.length &&
+      !statusRows.length &&
+      !topSkuRows.length &&
+      !topDeptRows.length
+    ) {
       setErrorMessage("当前无可导出的报表数据，请先加载报表。");
       return;
     }
@@ -262,6 +302,22 @@ export function AnalyticsPage({ routePath }: AnalyticsPageProps): JSX.Element {
     );
     rows.push(
       ...statusRows.map((item) => ["asset_status_distribution", item.status, item.count, ""]),
+    );
+    rows.push(
+      ...topSkuRows.map((item) => [
+        "top_skus",
+        item.skuName,
+        item.totalQuantity,
+        item.applicationCount,
+      ]),
+    );
+    rows.push(
+      ...topDeptRows.map((item) => [
+        "top_departments",
+        item.departmentName,
+        item.totalQuantity,
+        item.topSkus.map((s) => `${s.skuName}(${s.totalQuantity})`).join("; "),
+      ]),
     );
 
     const blob = new Blob(["\ufeff" + toCsv(rows)], {
@@ -363,7 +419,11 @@ export function AnalyticsPage({ routePath }: AnalyticsPageProps): JSX.Element {
                 disabled={
                   isLoadingReports ||
                   !canExportReport ||
-                  (!trendRows.length && !costRows.length && !statusRows.length)
+                  (!trendRows.length &&
+                    !costRows.length &&
+                    !statusRows.length &&
+                    !topSkuRows.length &&
+                    !topDeptRows.length)
                 }
                 onClick={() => {
                   handleExportReports();
@@ -383,27 +443,72 @@ export function AnalyticsPage({ routePath }: AnalyticsPageProps): JSX.Element {
               {isLoadingReports ? (
                 <p className="app-shell__card-copy">正在加载趋势数据...</p>
               ) : trendRows.length ? (
-                <div className="page-table-wrap">
-                  <table className="analytics-table">
-                    <caption className="visually-hidden">
-                      按时间桶统计申请数量的趋势报表
-                    </caption>
-                    <thead>
-                      <tr>
-                        <th scope="col">时间桶</th>
-                        <th scope="col">数量</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {trendRows.map((item) => (
-                        <tr key={item.bucket}>
-                          <td>{item.bucket}</td>
-                          <td>{item.count}</td>
+                <>
+                  <div className="analytics-chart-container">
+                    <ResponsiveContainer width="100%" height={300}>
+                      <AreaChart data={trendRows} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
+                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.1} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                        <XAxis
+                          dataKey="bucket"
+                          tick={{ fontSize: 12 }}
+                          tickLine={{ stroke: "#9ca3af" }}
+                          axisLine={{ stroke: "#9ca3af" }}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 12 }}
+                          tickLine={{ stroke: "#9ca3af" }}
+                          axisLine={{ stroke: "#9ca3af" }}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "#fff",
+                            border: "1px solid #e5e7eb",
+                            borderRadius: "6px",
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                          }}
+                          formatter={(value: number) => ["申请数量", value]}
+                          labelStyle={{ color: "#374151", fontWeight: 600 }}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="count"
+                          stroke="#3b82f6"
+                          strokeWidth={2}
+                          fillOpacity={1}
+                          fill="url(#colorCount)"
+                          name="申请数量"
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="page-table-wrap">
+                    <table className="analytics-table">
+                      <caption className="visually-hidden">
+                        按时间桶统计申请数量的趋势报表
+                      </caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">时间桶</th>
+                          <th scope="col">数量</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {trendRows.map((item) => (
+                          <tr key={item.bucket}>
+                            <td>{item.bucket}</td>
+                            <td>{item.count}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               ) : (
                 <p className="app-shell__card-copy">暂无趋势数据，请调整日期范围后重试。</p>
               )}
@@ -417,29 +522,70 @@ export function AnalyticsPage({ routePath }: AnalyticsPageProps): JSX.Element {
               {isLoadingReports ? (
                 <p className="app-shell__card-copy">正在加载部门成本...</p>
               ) : costRows.length ? (
-                <div className="page-table-wrap">
-                  <table className="analytics-table">
-                    <caption className="visually-hidden">
-                      包含总成本与申请数的部门成本报表
-                    </caption>
-                    <thead>
-                      <tr>
-                        <th scope="col">部门</th>
-                        <th scope="col">总成本</th>
-                        <th scope="col">申请数</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {costRows.map((item) => (
-                        <tr key={`${item.departmentId}-${item.departmentName}`}>
-                          <td>{item.departmentName}</td>
-                          <td>{item.totalCost}</td>
-                          <td>{item.applicationCount}</td>
+                <>
+                  <div className="analytics-chart-container">
+                    <ResponsiveContainer width="100%" height={300}>
+                      <BarChart data={costRows} margin={{ top: 10, right: 30, left: 20, bottom: 60 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                        <XAxis
+                          dataKey="departmentName"
+                          tick={{ fontSize: 11 }}
+                          tickLine={{ stroke: "#9ca3af" }}
+                          axisLine={{ stroke: "#9ca3af" }}
+                          angle={-45}
+                          textAnchor="end"
+                          height={60}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 12 }}
+                          tickLine={{ stroke: "#9ca3af" }}
+                          axisLine={{ stroke: "#9ca3af" }}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "#fff",
+                            border: "1px solid #e5e7eb",
+                            borderRadius: "6px",
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                          }}
+                          formatter={(value: number, name: string) => [
+                            name === "totalCost" ? "总成本" : "申请数量",
+                            name === "totalCost" ? `¥${value.toLocaleString()}` : value,
+                          ]}
+                        />
+                        <Legend
+                          wrapperStyle={{ paddingTop: "10px" }}
+                          formatter={(value: string) => (value === "totalCost" ? "总成本" : "申请数量")}
+                        />
+                        <Bar dataKey="totalCost" fill="#10b981" name="totalCost" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="applicationCount" fill="#f59e0b" name="applicationCount" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="page-table-wrap">
+                    <table className="analytics-table">
+                      <caption className="visually-hidden">
+                        包含总成本与申请数的部门成本报表
+                      </caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">部门</th>
+                          <th scope="col">总成本</th>
+                          <th scope="col">申请数</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {costRows.map((item) => (
+                          <tr key={`${item.departmentId}-${item.departmentName}`}>
+                            <td>{item.departmentName}</td>
+                            <td>{item.totalCost}</td>
+                            <td>{item.applicationCount}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               ) : (
                   <p className="app-shell__card-copy">暂无部门成本数据，请检查筛选条件后重试。</p>
               )}
@@ -453,29 +599,257 @@ export function AnalyticsPage({ routePath }: AnalyticsPageProps): JSX.Element {
               {isLoadingReports ? (
                 <p className="app-shell__card-copy">正在加载状态分布...</p>
               ) : statusRows.length ? (
-                <div className="page-table-wrap">
-                  <table className="analytics-table">
-                    <caption className="visually-hidden">
-                      按状态统计资产数量的分布报表
-                    </caption>
-                    <thead>
-                      <tr>
-                        <th scope="col">状态</th>
-                        <th scope="col">数量</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {statusRows.map((item) => (
-                        <tr key={item.status}>
-                          <td>{toAssetStatusLabel(item.status)}</td>
-                          <td>{item.count}</td>
+                <>
+                  <div className="analytics-chart-container">
+                    <ResponsiveContainer width="100%" height={300}>
+                      <PieChart>
+                        <Pie
+                          data={statusRows}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={true}
+                          label={({ status, percent }) =>
+                            `${toAssetStatusLabel(status)}: ${(percent * 100).toFixed(0)}%`
+                          }
+                          outerRadius={100}
+                          fill="#8884d8"
+                          dataKey="count"
+                          nameKey="status"
+                        >
+                          {statusRows.map((entry, index) => (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={[
+                                "#3b82f6",
+                                "#10b981",
+                                "#f59e0b",
+                                "#ef4444",
+                                "#8b5cf6",
+                                "#ec4899",
+                                "#14b8a6",
+                                "#f97316",
+                              ][index % 8]}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "#fff",
+                            border: "1px solid #e5e7eb",
+                            borderRadius: "6px",
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                          }}
+                          formatter={(value: number, name: string) => [
+                            name === "count" ? "资产数量" : toAssetStatusLabel(name),
+                            value,
+                          ]}
+                        />
+                        <Legend
+                          wrapperStyle={{ paddingTop: "10px" }}
+                          formatter={(value: string) => toAssetStatusLabel(value)}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="page-table-wrap">
+                    <table className="analytics-table">
+                      <caption className="visually-hidden">
+                        按状态统计资产数量的分布报表
+                      </caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">状态</th>
+                          <th scope="col">数量</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {statusRows.map((item) => (
+                          <tr key={item.status}>
+                            <td>{toAssetStatusLabel(item.status)}</td>
+                            <td>{item.count}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               ) : (
                 <p className="app-shell__card-copy">暂无资产状态分布数据。</p>
+              )}
+            </article>
+
+            <article className="app-shell__card">
+              <div className="page-card-head">
+                <p className="app-shell__section-label">物料申请排行</p>
+                <h3 className="app-shell__card-title">物料申请 Top 10</h3>
+              </div>
+              {isLoadingReports ? (
+                <p className="app-shell__card-copy">正在加载物料排行...</p>
+              ) : topSkuRows.length ? (
+                <>
+                  <div className="analytics-chart-container">
+                    <ResponsiveContainer width="100%" height={350}>
+                      <BarChart
+                        data={topSkuRows}
+                        layout="vertical"
+                        margin={{ top: 10, right: 30, left: 120, bottom: 10 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                        <XAxis
+                          type="number"
+                          tick={{ fontSize: 12 }}
+                          tickLine={{ stroke: "#9ca3af" }}
+                          axisLine={{ stroke: "#9ca3af" }}
+                        />
+                        <YAxis
+                          type="category"
+                          dataKey="skuName"
+                          tick={{ fontSize: 11 }}
+                          tickLine={{ stroke: "#9ca3af" }}
+                          axisLine={{ stroke: "#9ca3af" }}
+                          width={110}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "#fff",
+                            border: "1px solid #e5e7eb",
+                            borderRadius: "6px",
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                          }}
+                          formatter={(value: number, name: string) => [
+                            name === "totalQuantity" ? "申请数量" : "申请次数",
+                            value,
+                          ]}
+                        />
+                        <Legend
+                          wrapperStyle={{ paddingTop: "10px" }}
+                          formatter={(value: string) =>
+                            value === "totalQuantity" ? "申请数量" : "申请次数"
+                          }
+                        />
+                        <Bar
+                          dataKey="totalQuantity"
+                          fill="#3b82f6"
+                          name="totalQuantity"
+                          radius={[0, 4, 4, 0]}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="page-table-wrap">
+                    <table className="analytics-table">
+                      <caption className="visually-hidden">
+                        申请次数最多的前 10 名物料
+                      </caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">排名</th>
+                          <th scope="col">物料名称</th>
+                          <th scope="col">申请数量</th>
+                          <th scope="col">申请次数</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {topSkuRows.map((item, index) => (
+                          <tr key={item.skuId}>
+                            <td>{index + 1}</td>
+                            <td>{item.skuName}</td>
+                            <td>{item.totalQuantity}</td>
+                            <td>{item.applicationCount}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <p className="app-shell__card-copy">暂无物料排行数据，请调整日期范围后重试。</p>
+              )}
+            </article>
+
+            <article className="app-shell__card">
+              <div className="page-card-head">
+                <p className="app-shell__section-label">部门申请排行</p>
+                <h3 className="app-shell__card-title">部门申请 Top 10 + 热门物料</h3>
+              </div>
+              {isLoadingReports ? (
+                <p className="app-shell__card-copy">正在加载部门排行...</p>
+              ) : topDeptRows.length ? (
+                <>
+                  <div className="analytics-chart-container">
+                    <ResponsiveContainer width="100%" height={350}>
+                      <BarChart
+                        data={topDeptRows}
+                        layout="vertical"
+                        margin={{ top: 10, right: 30, left: 120, bottom: 10 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                        <XAxis
+                          type="number"
+                          tick={{ fontSize: 12 }}
+                          tickLine={{ stroke: "#9ca3af" }}
+                          axisLine={{ stroke: "#9ca3af" }}
+                        />
+                        <YAxis
+                          type="category"
+                          dataKey="departmentName"
+                          tick={{ fontSize: 11 }}
+                          tickLine={{ stroke: "#9ca3af" }}
+                          axisLine={{ stroke: "#9ca3af" }}
+                          width={100}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "#fff",
+                            border: "1px solid #e5e7eb",
+                            borderRadius: "6px",
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                          }}
+                          formatter={(value: number) => ["申请数量", value]}
+                        />
+                        <Bar
+                          dataKey="totalQuantity"
+                          fill="#10b981"
+                          name="申请数量"
+                          radius={[0, 4, 4, 0]}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="page-table-wrap">
+                    <table className="analytics-table">
+                      <caption className="visually-hidden">
+                        申请次数最多的前 10 名部门及其热门物料
+                      </caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">排名</th>
+                          <th scope="col">部门</th>
+                          <th scope="col">申请数量</th>
+                          <th scope="col">热门物料 Top 3</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {topDeptRows.map((item, index) => (
+                          <tr key={item.departmentId}>
+                            <td>{index + 1}</td>
+                            <td>{item.departmentName}</td>
+                            <td>{item.totalQuantity}</td>
+                            <td>
+                              {item.topSkus.length > 0
+                                ? item.topSkus
+                                    .map((sku) => `${sku.skuName}(${sku.totalQuantity})`)
+                                    .join("、 ")
+                                : "-"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <p className="app-shell__card-copy">暂无部门排行数据，请调整日期范围后重试。</p>
               )}
             </article>
           </section>
